@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/common/Navbar';
@@ -53,6 +54,17 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
+// Scroll to Top Component
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+};
+
 // Layout Component
 const Layout = ({ children }) => {
   return (
@@ -67,6 +79,7 @@ const Layout = ({ children }) => {
 function App() {
   return (
     <Router>
+      <ScrollToTop />
       <AuthProvider>
         <Toaster
           position="top-right"
@@ -151,6 +164,15 @@ function App() {
           
           <Route
             path="/admin/contest/create"
+            element={
+              <AdminRoute>
+                <Layout><CreateContest /></Layout>
+              </AdminRoute>
+            }
+          />
+          
+          <Route
+            path="/admin/contest/edit/:contestId"
             element={
               <AdminRoute>
                 <Layout><CreateContest /></Layout>

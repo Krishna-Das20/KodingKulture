@@ -1,13 +1,16 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import adminService from '../../services/adminService';
+import contestService from '../../services/contestService';
 import toast from 'react-hot-toast';
 import { Save, X, Plus, Trash2, Calendar } from 'lucide-react';
 
 const CreateContest = () => {
   const navigate = useNavigate();
+  const { contestId } = useParams();
   const { isAdmin } = useAuth();
+  const isEditMode = Boolean(contestId);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -32,6 +35,50 @@ const CreateContest = () => {
   });
 
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      toast.error('Access denied');
+      navigate('/');
+      return;
+    }
+
+    if (isEditMode) {
+      loadContest();
+    }
+  }, [contestId, isAdmin]);
+
+  const loadContest = async () => {
+    try {
+      setLoading(true);
+      const data = await contestService.getContestById(contestId);
+      const contest = data.contest;
+      
+      // Format dates for datetime-local input
+      const formatDateTime = (date) => {
+        const d = new Date(date);
+        return d.toISOString().slice(0, 16);
+      };
+
+      setFormData({
+        title: contest.title,
+        description: contest.description,
+        startTime: formatDateTime(contest.startTime),
+        endTime: formatDateTime(contest.endTime),
+        duration: contest.duration,
+        maxParticipants: contest.maxParticipants || '',
+        sections: contest.sections,
+        rules: contest.rules,
+        prizes: contest.prizes,
+        isPublished: contest.isPublished
+      });
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading contest:', error);
+      toast.error('Failed to load contest');
+      navigate('/admin/dashboard');
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -137,12 +184,18 @@ const CreateContest = () => {
         prizes: formData.prizes.filter(p => p.trim())
       };
 
-      await adminService.createContest(contestData);
-      toast.success('Contest created successfully!');
+      if (isEditMode) {
+        await adminService.updateContest(contestId, contestData);
+        toast.success('Contest updated successfully!');
+      } else {
+        await adminService.createContest(contestData);
+        toast.success('Contest created successfully!');
+      }
+      
       navigate('/admin/dashboard');
     } catch (error) {
-      console.error('Error creating contest:', error);
-      toast.error(error.response?.data?.message || 'Failed to create contest');
+      console.error('Error saving contest:', error);
+      toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} contest`);
     } finally {
       setLoading(false);
     }
@@ -154,8 +207,8 @@ const CreateContest = () => {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Create New Contest</h1>
-            <p className="text-gray-400">Fill in the details to create a new contest</p>
+            <h1 className="text-3xl font-bold mb-2">{isEditMode ? 'Edit Contest' : 'Create New Contest'}</h1>
+            <p className="text-gray-400">{isEditMode ? 'Update contest details' : 'Fill in the details to create a new contest'}</p>
           </div>
           
           <button
@@ -167,7 +220,12 @@ const CreateContest = () => {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {loading && isEditMode ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-6">
           {/* Basic Information */}
           <div className="card">
             <h2 className="text-xl font-bold mb-4">Basic Information</h2>
@@ -446,17 +504,18 @@ const CreateContest = () => {
               {loading ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  Creating...
+                  {isEditMode ? 'Updating...' : 'Creating...'}
                 </>
               ) : (
                 <>
                   <Save className="w-5 h-5 mr-2" />
-                  Create Contest
+                  {isEditMode ? 'Update Contest' : 'Create Contest'}
                 </>
               )}
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   );
