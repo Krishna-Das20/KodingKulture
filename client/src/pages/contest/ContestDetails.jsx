@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 const ContestDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [contest, setContest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
@@ -40,9 +40,14 @@ const ContestDetails = () => {
 
     try {
       setRegistering(true);
-      await contestService.registerForContest(id);
+      const response = await contestService.registerForContest(id);
       toast.success('Successfully registered for contest!');
-      fetchContestDetails();
+      // Update contest with the returned data or refetch
+      if (response.contest) {
+        setContest(response.contest);
+      } else {
+        await fetchContestDetails();
+      }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Registration failed');
     } finally {
@@ -72,9 +77,30 @@ const ContestDetails = () => {
     );
   }
 
-  const isRegistered = contest.participants?.includes(useAuth().user?._id);
+  // More robust registration check - backend sends 'id' not '_id'
+  const userId = user?.id || user?._id;
+  const isRegistered = userId && contest.participants ? 
+    contest.participants.some(participantId => {
+      const pid = typeof participantId === 'object' ? participantId._id || participantId.id || participantId : participantId;
+      return pid?.toString() === userId?.toString();
+    }) : false;
+
   const isLive = contest.status === 'LIVE';
   const isEnded = contest.status === 'ENDED';
+
+  // Debug logging
+  console.log('Registration Debug:', {
+    userId: userId,
+    userIdString: userId?.toString(),
+    userObject: user,
+    participants: contest.participants,
+    participantsStrings: contest.participants?.map(p => p?.toString()),
+    isRegistered,
+    isAuthenticated,
+    isLive,
+    isEnded,
+    contestStatus: contest.status
+  });
 
   return (
     <div className="min-h-screen bg-dark-950 py-8">

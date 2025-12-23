@@ -61,7 +61,13 @@ const MCQSection = () => {
   const handleOptionSelect = (mcqId, optionIndex) => {
     const mcq = mcqs.find(m => m._id === mcqId);
     
-    if (mcq.correctAnswers.length > 1) {
+    if (!mcq || !mcq.options) return;
+    
+    // Determine if multiple answers based on options (since correctAnswers might be hidden)
+    const correctCount = mcq.options.filter(opt => opt.isCorrect).length;
+    const isMultipleAnswer = correctCount > 1;
+    
+    if (isMultipleAnswer) {
       // Multiple correct answers - toggle selection
       setAnswers(prev => {
         const current = prev[mcqId] || [];
@@ -149,7 +155,21 @@ const MCQSection = () => {
   }
 
   const currentMCQ = mcqs[currentQuestion];
-  const isMultipleAnswer = currentMCQ.correctAnswers.length > 1;
+  
+  // Check if currentMCQ and its properties exist
+  if (!currentMCQ || !currentMCQ.options) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto"></div>
+          <p className="mt-4 text-gray-400">Loading question...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Determine if multiple answers based on options (since correctAnswers is hidden)
+  const isMultipleAnswer = currentMCQ.options.filter(opt => opt.isCorrect).length > 1;
   const selectedOptions = answers[currentMCQ._id] || [];
 
   return (

@@ -184,9 +184,13 @@ export const registerForContest = async (req, res) => {
       status: 'IN_PROGRESS'
     });
 
+    // Return updated contest
+    const updatedContest = await Contest.findById(contest._id).populate('createdBy', 'name email');
+
     res.status(200).json({
       success: true,
-      message: 'Successfully registered for contest'
+      message: 'Successfully registered for contest',
+      contest: updatedContest
     });
   } catch (error) {
     console.error('Register contest error:', error);
