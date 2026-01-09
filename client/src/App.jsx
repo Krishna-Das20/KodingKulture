@@ -1,24 +1,35 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ContestTimerProvider } from './context/ContestTimerContext';
 import Navbar from './components/common/Navbar';
 import Footer from './components/common/Footer';
 import Home from './pages/Home';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
+import VerifyOTP from './pages/auth/VerifyOTP';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import ResetPassword from './pages/auth/ResetPassword';
 import ContestList from './pages/contest/ContestList';
 import ContestDetails from './pages/contest/ContestDetails';
+import ContestHub from './pages/contest/ContestHub';
 import MCQSection from './pages/contest/MCQSection';
 import CodingSection from './pages/contest/CodingSection';
+import ContestReview from './pages/contest/ContestReview';
 import UserDashboard from './pages/dashboard/UserDashboard';
 import Leaderboard from './pages/leaderboard/Leaderboard';
+import LeaderboardList from './pages/leaderboard/LeaderboardList';
 import Certificate from './pages/certificate/Certificate';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import CreateContest from './pages/admin/CreateContest';
 import ManageMCQ from './pages/admin/ManageMCQ';
 import ManageCodingProblems from './pages/admin/ManageCodingProblems';
+import MCQLibrary from './pages/admin/MCQLibrary';
+import CodingLibrary from './pages/admin/CodingLibrary';
+import ContestViolations from './pages/admin/ContestViolations';
 import Loader from './components/common/Loader';
+import ProctorGuard from './components/contest/ProctorGuard';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -76,6 +87,38 @@ const Layout = ({ children }) => {
   );
 };
 
+// Contest Wrapper with Timer Provider
+const ContestWithTimer = ({ children }) => {
+  const { contestId } = useParams();
+  return (
+    <ContestTimerProvider contestId={contestId}>
+      {children}
+    </ContestTimerProvider>
+  );
+};
+
+// Proctored Contest Wrapper (for MCQ and Coding sections)
+const ProctoredContest = ({ children }) => {
+  const { contestId } = useParams();
+  const navigate = useNavigate();
+
+  const handleAutoSubmit = (reason) => {
+    // Navigate to results after malpractice auto-submit
+    setTimeout(() => {
+      navigate(`/contest/${contestId}/review`);
+    }, 2000);
+  };
+
+  return (
+    <ContestTimerProvider contestId={contestId}>
+      <ProctorGuard contestId={contestId} onAutoSubmit={handleAutoSubmit} enabled={true}>
+        {children}
+      </ProctorGuard>
+    </ContestTimerProvider>
+  );
+};
+
+
 function App() {
   return (
     <Router>
@@ -109,8 +152,12 @@ function App() {
           <Route path="/" element={<Layout><Home /></Layout>} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-otp" element={<VerifyOTP />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/contests" element={<Layout><ContestList /></Layout>} />
           <Route path="/contest/:id" element={<Layout><ContestDetails /></Layout>} />
+          <Route path="/leaderboard" element={<Layout><LeaderboardList /></Layout>} />
           <Route path="/leaderboard/:contestId" element={<Layout><Leaderboard /></Layout>} />
 
           {/* Protected Routes */}
@@ -122,22 +169,48 @@ function App() {
               </ProtectedRoute>
             }
           />
-          
+
           {/* Contest Section Routes */}
+          <Route
+            path="/contest/:contestId/hub"
+            element={
+              <ProtectedRoute>
+                <ContestWithTimer>
+                  <ContestHub />
+                </ContestWithTimer>
+              </ProtectedRoute>
+            }
+          />
+
           <Route
             path="/contest/:contestId/mcq"
             element={
               <ProtectedRoute>
-                <MCQSection />
+                <ProctoredContest>
+                  <MCQSection />
+                </ProctoredContest>
               </ProtectedRoute>
             }
           />
-          
+
           <Route
             path="/contest/:contestId/coding"
             element={
               <ProtectedRoute>
-                <CodingSection />
+                <ProctoredContest>
+                  <CodingSection />
+                </ProctoredContest>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/contest/:contestId/review"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <ContestReview />
+                </Layout>
               </ProtectedRoute>
             }
           />
@@ -161,7 +234,7 @@ function App() {
               </AdminRoute>
             }
           />
-          
+
           <Route
             path="/admin/contest/create"
             element={
@@ -170,7 +243,7 @@ function App() {
               </AdminRoute>
             }
           />
-          
+
           <Route
             path="/admin/contest/edit/:contestId"
             element={
@@ -179,7 +252,7 @@ function App() {
               </AdminRoute>
             }
           />
-          
+
           <Route
             path="/admin/contest/mcq/:contestId"
             element={
@@ -188,12 +261,41 @@ function App() {
               </AdminRoute>
             }
           />
-          
+
           <Route
             path="/admin/contest/coding/:contestId"
             element={
               <AdminRoute>
                 <Layout><ManageCodingProblems /></Layout>
+              </AdminRoute>
+            }
+          />
+
+          {/* Library Routes */}
+          <Route
+            path="/admin/mcq-library"
+            element={
+              <AdminRoute>
+                <Layout><MCQLibrary /></Layout>
+              </AdminRoute>
+            }
+          />
+
+          <Route
+            path="/admin/coding-library"
+            element={
+              <AdminRoute>
+                <Layout><CodingLibrary /></Layout>
+              </AdminRoute>
+            }
+          />
+
+          {/* Proctoring Violations Route */}
+          <Route
+            path="/admin/contest/:contestId/violations"
+            element={
+              <AdminRoute>
+                <ContestViolations />
               </AdminRoute>
             }
           />

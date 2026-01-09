@@ -1,10 +1,16 @@
 import mongoose from 'mongoose';
 
 const codingProblemSchema = new mongoose.Schema({
+  // Optional - null for library problems
   contestId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Contest',
-    required: true
+    default: null
+  },
+  // Is this a library problem (reusable)?
+  isLibrary: {
+    type: Boolean,
+    default: false
   },
   title: {
     type: String,
@@ -59,6 +65,11 @@ const codingProblemSchema = new mongoose.Schema({
     enum: ['EASY', 'MEDIUM', 'HARD'],
     default: 'MEDIUM'
   },
+  category: {
+    type: String,
+    enum: ['GENERAL', 'DSA', 'ALGORITHMS', 'DATABASE', 'SYSTEM_DESIGN'],
+    default: 'GENERAL'
+  },
   timeLimit: {
     type: Number, // in seconds
     default: 2
@@ -70,10 +81,28 @@ const codingProblemSchema = new mongoose.Schema({
   tags: [{
     type: String
   }],
+  // Optional image for the problem description
+  imageUrl: {
+    type: String,
+    default: null
+  },
+  imagePublicId: {
+    type: String,
+    default: null
+  },
   order: {
     type: Number,
     default: 0
   },
+  // Metrics for tracking
+  metrics: {
+    attempted: { type: Number, default: 0 },
+    accepted: { type: Number, default: 0 },
+    wrongAnswer: { type: Number, default: 0 },
+    tle: { type: Number, default: 0 },
+    runtimeError: { type: Number, default: 0 }
+  },
+  // Legacy fields (kept for backward compatibility)
   submissionCount: {
     type: Number,
     default: 0
@@ -88,13 +117,19 @@ const codingProblemSchema = new mongoose.Schema({
 
 // Indexes
 codingProblemSchema.index({ contestId: 1, order: 1 });
+codingProblemSchema.index({ isLibrary: 1, category: 1 });
+codingProblemSchema.index({ isLibrary: 1, difficulty: 1 });
+codingProblemSchema.index({ tags: 1 });
 
 // Virtual for acceptance rate
-codingProblemSchema.virtual('acceptanceRate').get(function() {
-  if (this.submissionCount === 0) return 0;
-  return ((this.acceptedCount / this.submissionCount) * 100).toFixed(2);
+codingProblemSchema.virtual('acceptanceRate').get(function () {
+  const total = this.metrics?.attempted || this.submissionCount || 0;
+  const accepted = this.metrics?.accepted || this.acceptedCount || 0;
+  if (total === 0) return 0;
+  return ((accepted / total) * 100).toFixed(2);
 });
 
 const CodingProblem = mongoose.model('CodingProblem', codingProblemSchema);
 
 export default CodingProblem;
+

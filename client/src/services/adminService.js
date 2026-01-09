@@ -49,6 +49,18 @@ const adminService = {
     return response.data;
   },
 
+  // Remove MCQ from contest (unlink only, don't delete)
+  removeMCQFromContest: async (contestId, mcqId) => {
+    const response = await api.delete(`/mcq/contest/${contestId}/mcq/${mcqId}`);
+    return response.data;
+  },
+
+  // Remove Coding Problem from contest (unlink only, don't delete)
+  removeCodingFromContest: async (contestId, problemId) => {
+    const response = await api.delete(`/coding/contest/${contestId}/problem/${problemId}`);
+    return response.data;
+  },
+
   // Statistics
   getAdminStats: async () => {
     const response = await api.get('/admin/stats');

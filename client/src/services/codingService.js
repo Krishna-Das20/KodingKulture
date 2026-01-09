@@ -22,8 +22,11 @@ const codingService = {
     return response.data;
   },
 
-  getSubmissions: async (problemId) => {
-    const response = await api.get(`/submissions/problem/${problemId}`);
+  getSubmissions: async (problemId, contestId = null) => {
+    const url = contestId
+      ? `/submissions/problem/${problemId}?contestId=${contestId}`
+      : `/submissions/problem/${problemId}`;
+    const response = await api.get(url);
     return response.data;
   },
 

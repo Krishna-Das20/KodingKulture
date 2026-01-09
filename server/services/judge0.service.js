@@ -1,15 +1,21 @@
 import judge0Client, { LANGUAGE_MAP } from '../config/judge0.js';
 
+// Helper to encode to base64
+const toBase64 = (str) => Buffer.from(str || '').toString('base64');
+
+// Helper to decode from base64
+const fromBase64 = (str) => str ? Buffer.from(str, 'base64').toString('utf-8') : '';
+
 // @desc    Submit code to Judge0
 // @route   POST /api/judge0/submit
 export const submitToJudge0 = async (sourceCode, languageId, input, expectedOutput) => {
   try {
-    // Create submission
-    const response = await judge0Client.post('/submissions', {
-      source_code: sourceCode,
+    // Create submission with base64 encoding
+    const response = await judge0Client.post('/submissions?base64_encoded=true', {
+      source_code: toBase64(sourceCode),
       language_id: languageId,
-      stdin: input,
-      expected_output: expectedOutput,
+      stdin: toBase64(input),
+      expected_output: toBase64(expectedOutput),
       cpu_time_limit: 2,
       memory_limit: 256000 // 256 MB in KB
     });
@@ -24,7 +30,7 @@ export const submitToJudge0 = async (sourceCode, languageId, input, expectedOutp
     while (attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
 
-      const resultResponse = await judge0Client.get(`/submissions/${token}`);
+      const resultResponse = await judge0Client.get(`/submissions/${token}?base64_encoded=true`);
       result = resultResponse.data;
 
       if (result.status.id > 2) { // Status > 2 means completed
@@ -33,6 +39,12 @@ export const submitToJudge0 = async (sourceCode, languageId, input, expectedOutp
 
       attempts++;
     }
+
+    // Decode base64 fields in result
+    if (result.stdout) result.stdout = fromBase64(result.stdout);
+    if (result.stderr) result.stderr = fromBase64(result.stderr);
+    if (result.compile_output) result.compile_output = fromBase64(result.compile_output);
+    if (result.message) result.message = fromBase64(result.message);
 
     return result;
   } catch (error) {
@@ -54,7 +66,7 @@ export const batchSubmitToJudge0 = async (submissions) => {
     await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
 
     const results = await Promise.all(
-      tokens.map(token => 
+      tokens.map(token =>
         judge0Client.get(`/submissions/${token}`)
           .then(res => res.data)
       )
@@ -97,7 +109,7 @@ export const STATUS_MAP = {
 };
 
 export const mapStatusToVerdict = (statusId) => {
-  switch(statusId) {
+  switch (statusId) {
     case 3:
       return 'ACCEPTED';
     case 4:

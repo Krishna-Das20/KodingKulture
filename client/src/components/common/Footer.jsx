@@ -7,10 +7,13 @@ const Footer = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {/* About */}
           <div>
-            <h3 className="text-lg font-bold text-primary-500 mb-3">Contest Platform</h3>
+            <h3 className="text-lg font-bold mb-3">
+              <span className="text-primary-500">FAKT</span>
+              <span className="text-white"> CHECK</span>
+            </h3>
             <p className="text-gray-400 text-sm">
-              A professional platform for weekly coding contests, MCQ tests, and skill assessments. 
-              Compete, learn, and grow with us!
+              A professional platform for weekly coding contests, MCQ tests, and skill assessments.
+              Kompete, Kode, and Konquer with us!
             </p>
           </div>
 
@@ -46,7 +49,7 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-dark-800 mt-8 pt-6 text-center text-gray-400 text-sm">
-          <p>&copy; {new Date().getFullYear()} Koding Kulture. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} FAKT CHECK. All rights reserved.</p>
         </div>
       </div>
     </footer>

@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import contestService from '../../services/contestService';
 import { useAuth } from '../../context/AuthContext';
 import Loader from '../../components/common/Loader';
-import { Calendar, Clock, Users, Award, FileText, Code2, CheckCircle } from 'lucide-react';
+import { Calendar, Clock, Users, Award, FileText, Code2, CheckCircle, Play } from 'lucide-react';
 import { formatDate } from '../../utils/formatTime';
 import toast from 'react-hot-toast';
+import api from '../../services/authService';
 
 const ContestDetails = () => {
   const { id } = useParams();
@@ -14,10 +15,15 @@ const ContestDetails = () => {
   const [contest, setContest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [userProgress, setUserProgress] = useState(null);
 
   useEffect(() => {
     fetchContestDetails();
-  }, [id]);
+    if (isAuthenticated) {
+      fetchUserProgress();
+    }
+  }, [id, isAuthenticated]);
 
   const fetchContestDetails = async () => {
     try {
@@ -28,6 +34,16 @@ const ContestDetails = () => {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchUserProgress = async () => {
+    try {
+      const response = await api.get(`/contests/${id}/progress`);
+      setUserProgress(response.data.progress);
+    } catch (error) {
+      // No progress means user hasn't started the contest
+      setUserProgress(null);
     }
   };
 
@@ -55,11 +71,14 @@ const ContestDetails = () => {
     }
   };
 
-  const handleEnterContest = () => {
-    if (contest.sections.mcq.enabled) {
-      navigate(`/contest/${id}/mcq`);
-    } else {
-      navigate(`/contest/${id}/coding`);
+  const handleStartContest = async () => {
+    try {
+      setStarting(true);
+      await api.post(`/contests/${id}/start`);
+      navigate(`/contest/${id}/hub`);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to start contest');
+      setStarting(false);
     }
   };
 
@@ -79,7 +98,7 @@ const ContestDetails = () => {
 
   // More robust registration check - backend sends 'id' not '_id'
   const userId = user?.id || user?._id;
-  const isRegistered = userId && contest.participants ? 
+  const isRegistered = userId && contest.participants ?
     contest.participants.some(participantId => {
       const pid = typeof participantId === 'object' ? participantId._id || participantId.id || participantId : participantId;
       return pid?.toString() === userId?.toString();
@@ -151,7 +170,7 @@ const ContestDetails = () => {
             </div>
           </div>
 
-          {/* Sections */}
+          {/* Sections Preview */}
           <div className="grid md:grid-cols-2 gap-4 mb-6">
             {contest.sections.mcq?.enabled && (
               <div className="bg-dark-800 p-4 rounded-lg border border-dark-700">
@@ -159,15 +178,7 @@ const ContestDetails = () => {
                   <FileText className="w-6 h-6 text-primary-500" />
                   <h3 className="text-lg font-semibold text-white">MCQ Section</h3>
                 </div>
-                <p className="text-gray-400 text-sm mb-2">Marks: {contest.sections.mcq.totalMarks}</p>
-                {isRegistered && isLive && (
-                  <button
-                    onClick={() => navigate(`/contest/${id}/mcq`)}
-                    className="btn-primary w-full mt-3"
-                  >
-                    Start MCQ Section
-                  </button>
-                )}
+                <p className="text-gray-400 text-sm">Marks: {contest.sections.mcq.totalMarks}</p>
               </div>
             )}
             {contest.sections.coding?.enabled && (
@@ -176,21 +187,14 @@ const ContestDetails = () => {
                   <Code2 className="w-6 h-6 text-primary-500" />
                   <h3 className="text-lg font-semibold text-white">Coding Section</h3>
                 </div>
-                <p className="text-gray-400 text-sm mb-2">Marks: {contest.sections.coding.totalMarks}</p>
-                {isRegistered && isLive && (
-                  <button
-                    onClick={() => navigate(`/contest/${id}/coding`)}
-                    className="btn-primary w-full mt-3"
-                  >
-                    Start Coding Section
-                  </button>
-                )}
+                <p className="text-gray-400 text-sm">Marks: {contest.sections.coding.totalMarks}</p>
               </div>
             )}
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
+            {/* Not registered yet */}
             {!isRegistered && !isEnded && (
               <button
                 onClick={handleRegister}
@@ -200,8 +204,9 @@ const ContestDetails = () => {
                 {registering ? 'Registering...' : 'Register for Contest'}
               </button>
             )}
-            
-            {isRegistered && !isEnded && (
+
+            {/* Registered but NOT submitted - show Start Contest */}
+            {isRegistered && !isEnded && userProgress?.status !== 'SUBMITTED' && (
               <div className="flex-1 flex items-center gap-4">
                 <div className="flex items-center gap-2 text-green-400">
                   <CheckCircle className="w-5 h-5" />
@@ -209,16 +214,52 @@ const ContestDetails = () => {
                 </div>
                 {isLive && (
                   <button
-                    onClick={handleEnterContest}
-                    className="btn-primary flex-1 py-3 text-lg font-semibold glow-effect"
+                    onClick={handleStartContest}
+                    disabled={starting}
+                    className="btn-primary flex-1 py-3 text-lg font-semibold glow-effect flex items-center justify-center gap-2"
                   >
-                    Enter Contest Now
+                    {starting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                        Starting...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-5 h-5" />
+                        Start Contest
+                      </>
+                    )}
                   </button>
                 )}
               </div>
             )}
 
-            {isEnded && (
+            {/* Submitted users - show View Details buttons */}
+            {isRegistered && userProgress?.status === 'SUBMITTED' && (
+              <div className="flex-1 flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-green-400">
+                  <CheckCircle className="w-5 h-5" />
+                  <span className="font-semibold">Contest Submitted</span>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => navigate(`/leaderboard/${id}`)}
+                    className="btn-primary flex-1 py-3 text-lg font-semibold"
+                  >
+                    View Leaderboard
+                  </button>
+                  <button
+                    onClick={() => navigate(`/contest/${id}/review`)}
+                    className="btn-secondary flex-1 py-3 text-lg font-semibold"
+                  >
+                    Review Answers
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Contest ended - show leaderboard */}
+            {isEnded && !userProgress?.status && (
               <button
                 onClick={() => navigate(`/leaderboard/${id}`)}
                 className="btn-primary flex-1 py-3 text-lg font-semibold"

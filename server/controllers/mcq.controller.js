@@ -1,8 +1,229 @@
 import MCQ from '../models/MCQ.js';
+import ContestMCQ from '../models/ContestMCQ.js';
 import Result from '../models/Result.js';
 import Contest from '../models/Contest.js';
 
-// @desc    Get MCQs for a contest
+// ============ LIBRARY ENDPOINTS ============
+
+// @desc    Get all library MCQs
+// @route   GET /api/mcq/library
+// @access  Private/Admin
+export const getLibraryMCQs = async (req, res) => {
+  try {
+    const { category, difficulty, search } = req.query;
+
+    const filter = { isLibrary: true };
+    if (category) filter.category = category;
+    if (difficulty) filter.difficulty = difficulty;
+    if (search) {
+      filter.$or = [
+        { question: { $regex: search, $options: 'i' } },
+        { tags: { $in: [new RegExp(search, 'i')] } }
+      ];
+    }
+
+    const mcqs = await MCQ.find(filter).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: mcqs.length,
+      mcqs
+    });
+  } catch (error) {
+    console.error('Get library MCQs error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching library MCQs'
+    });
+  }
+};
+
+// @desc    Create library MCQ
+// @route   POST /api/mcq/library
+// @access  Private/Admin
+export const createLibraryMCQ = async (req, res) => {
+  try {
+    const mcqData = {
+      ...req.body,
+      isLibrary: true,
+      contestId: null
+    };
+
+    const mcq = await MCQ.create(mcqData);
+
+    res.status(201).json({
+      success: true,
+      message: 'Library MCQ created successfully',
+      mcq
+    });
+  } catch (error) {
+    console.error('Create library MCQ error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error creating library MCQ'
+    });
+  }
+};
+
+// @desc    Update library MCQ
+// @route   PUT /api/mcq/library/:id
+// @access  Private/Admin
+export const updateLibraryMCQ = async (req, res) => {
+  try {
+    const mcq = await MCQ.findOneAndUpdate(
+      { _id: req.params.id, isLibrary: true },
+      req.body,
+      { new: true, runValidators: true }
+    );
+
+    if (!mcq) {
+      return res.status(404).json({
+        success: false,
+        message: 'Library MCQ not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Library MCQ updated successfully',
+      mcq
+    });
+  } catch (error) {
+    console.error('Update library MCQ error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error updating library MCQ'
+    });
+  }
+};
+
+// @desc    Delete library MCQ
+// @route   DELETE /api/mcq/library/:id
+// @access  Private/Admin
+export const deleteLibraryMCQ = async (req, res) => {
+  try {
+    const mcq = await MCQ.findOneAndDelete({ _id: req.params.id, isLibrary: true });
+
+    if (!mcq) {
+      return res.status(404).json({
+        success: false,
+        message: 'Library MCQ not found'
+      });
+    }
+
+    // Also remove from all contests
+    await ContestMCQ.deleteMany({ mcqId: req.params.id });
+
+    res.status(200).json({
+      success: true,
+      message: 'Library MCQ deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete library MCQ error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error deleting library MCQ'
+    });
+  }
+};
+
+// @desc    Add library MCQs to contest
+// @route   POST /api/mcq/contest/:contestId/add-from-library
+// @access  Private/Admin
+export const addLibraryMCQsToContest = async (req, res) => {
+  try {
+    const { contestId } = req.params;
+    const { mcqIds } = req.body; // Array of library MCQ IDs
+
+    const contest = await Contest.findById(contestId);
+    if (!contest) {
+      return res.status(404).json({
+        success: false,
+        message: 'Contest not found'
+      });
+    }
+
+    // Get current max order
+    const lastMCQ = await ContestMCQ.findOne({ contestId }).sort({ order: -1 });
+    let currentOrder = lastMCQ ? lastMCQ.order + 1 : 1;
+
+    const addedMCQs = [];
+    for (const mcqId of mcqIds) {
+      const mcq = await MCQ.findOne({ _id: mcqId, isLibrary: true });
+      if (!mcq) continue;
+
+      // Check if already added
+      const existing = await ContestMCQ.findOne({ contestId, mcqId });
+      if (existing) continue;
+
+      const contestMCQ = await ContestMCQ.create({
+        contestId,
+        mcqId,
+        marks: mcq.marks,
+        order: currentOrder++
+      });
+
+      addedMCQs.push(contestMCQ);
+    }
+
+    // Update contest total marks
+    const totalMarks = addedMCQs.reduce((sum, cm) => sum + cm.marks, 0);
+    contest.sections.mcq.totalMarks += totalMarks;
+    await contest.save();
+
+    res.status(200).json({
+      success: true,
+      message: `${addedMCQs.length} MCQs added to contest`,
+      addedMCQs
+    });
+  } catch (error) {
+    console.error('Add library MCQs error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error adding MCQs to contest'
+    });
+  }
+};
+
+// @desc    Remove MCQ from contest
+// @route   DELETE /api/mcq/contest/:contestId/mcq/:mcqId
+// @access  Private/Admin
+export const removeMCQFromContest = async (req, res) => {
+  try {
+    const { contestId, mcqId } = req.params;
+
+    const contestMCQ = await ContestMCQ.findOneAndDelete({ contestId, mcqId });
+
+    if (!contestMCQ) {
+      return res.status(404).json({
+        success: false,
+        message: 'MCQ not found in contest'
+      });
+    }
+
+    // Update contest total marks
+    const contest = await Contest.findById(contestId);
+    if (contest) {
+      contest.sections.mcq.totalMarks -= contestMCQ.marks;
+      await contest.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'MCQ removed from contest'
+    });
+  } catch (error) {
+    console.error('Remove MCQ error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error removing MCQ'
+    });
+  }
+};
+
+// ============ CONTEST ENDPOINTS ============
+
+// @desc    Get MCQs for a contest (includes library MCQs linked via ContestMCQ)
 // @route   GET /api/mcq/contest/:contestId
 // @access  Private
 export const getMCQsByContest = async (req, res) => {
@@ -20,14 +241,40 @@ export const getMCQsByContest = async (req, res) => {
       }
     }
 
-    const mcqs = await MCQ.find({ contestId })
+    // Get contest-specific MCQs
+    const directMCQs = await MCQ.find({ contestId })
       .sort({ order: 1 })
-      .select(req.user.role === 'ADMIN' ? '' : '-correctAnswers -explanation'); // Show answers to admin
+      .select(req.user.role === 'ADMIN' ? '' : '-correctAnswers -explanation');
+
+    // Get library MCQs linked to this contest
+    const contestMCQLinks = await ContestMCQ.find({ contestId })
+      .populate({
+        path: 'mcqId',
+        select: req.user.role === 'ADMIN' ? '' : '-correctAnswers -explanation'
+      })
+      .sort({ order: 1 });
+
+    // Combine and format
+    const libraryMCQs = contestMCQLinks
+      .filter(link => link.mcqId !== null)
+      .map(link => ({
+        ...link.mcqId.toObject(),
+        _id: link.mcqId._id,
+        marks: link.marks || link.mcqId.marks,
+        order: link.order,
+        contestMCQId: link._id
+      }));
+
+    // Get contest info
+    const contest = await Contest.findById(contestId).select('title duration startTime endTime');
+
+    const allMCQs = [...directMCQs, ...libraryMCQs].sort((a, b) => a.order - b.order);
 
     res.status(200).json({
       success: true,
-      count: mcqs.length,
-      mcqs
+      count: allMCQs.length,
+      mcqs: allMCQs,
+      contest
     });
   } catch (error) {
     console.error('Get MCQs error:', error);
@@ -38,23 +285,23 @@ export const getMCQsByContest = async (req, res) => {
   }
 };
 
-// @desc    Submit MCQ answers
+// @desc    Submit MCQ answers (with metrics tracking)
 // @route   POST /api/mcq/submit
 // @access  Private
 export const submitMCQAnswers = async (req, res) => {
   try {
-    const { contestId, answers } = req.body; // answers: [{ questionId, selectedOptions, timeTaken }]
+    const { contestId, answers } = req.body;
 
     let totalScore = 0;
     const mcqAnswers = [];
 
     for (const answer of answers) {
       const mcq = await MCQ.findById(answer.questionId);
-      
+
       if (!mcq) continue;
 
-      const isCorrect = JSON.stringify(answer.selectedOptions.sort()) === 
-                        JSON.stringify(mcq.correctAnswers.sort());
+      const isCorrect = JSON.stringify(answer.selectedOptions.sort()) ===
+        JSON.stringify(mcq.correctAnswers.sort());
 
       let marksAwarded = 0;
       if (isCorrect) {
@@ -72,6 +319,29 @@ export const submitMCQAnswers = async (req, res) => {
         marksAwarded,
         timeTaken: answer.timeTaken || 0
       });
+
+      // Update global metrics on the MCQ
+      await MCQ.findByIdAndUpdate(answer.questionId, {
+        $inc: {
+          'metrics.attempted': 1,
+          'metrics.correct': isCorrect ? 1 : 0,
+          'metrics.wrong': isCorrect ? 0 : 1
+        }
+      });
+
+      // Update contest-specific metrics if linked from library
+      if (mcq.isLibrary) {
+        await ContestMCQ.findOneAndUpdate(
+          { contestId, mcqId: answer.questionId },
+          {
+            $inc: {
+              'contestMetrics.attempted': 1,
+              'contestMetrics.correct': isCorrect ? 1 : 0,
+              'contestMetrics.wrong': isCorrect ? 0 : 1
+            }
+          }
+        );
+      }
     }
 
     // Update result
@@ -99,18 +369,20 @@ export const submitMCQAnswers = async (req, res) => {
   }
 };
 
-// @desc    Create MCQ (Admin)
+// @desc    Create MCQ (Admin) - for direct contest MCQs
 // @route   POST /api/mcq
 // @access  Private/Admin
 export const createMCQ = async (req, res) => {
   try {
     const mcq = await MCQ.create(req.body);
 
-    // Update contest total marks
-    const contest = await Contest.findById(mcq.contestId);
-    if (contest) {
-      contest.sections.mcq.totalMarks += mcq.marks;
-      await contest.save();
+    // Update contest total marks if linked to a contest
+    if (mcq.contestId) {
+      const contest = await Contest.findById(mcq.contestId);
+      if (contest) {
+        contest.sections.mcq.totalMarks += mcq.marks;
+        await contest.save();
+      }
     }
 
     res.status(201).json({
@@ -182,6 +454,121 @@ export const deleteMCQ = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error deleting MCQ'
+    });
+  }
+};
+
+// @desc    Get MCQ metrics
+// @route   GET /api/mcq/:id/metrics
+// @access  Private/Admin
+export const getMCQMetrics = async (req, res) => {
+  try {
+    const mcq = await MCQ.findById(req.params.id).select('question metrics');
+
+    if (!mcq) {
+      return res.status(404).json({
+        success: false,
+        message: 'MCQ not found'
+      });
+    }
+
+    const successRate = mcq.metrics.attempted > 0
+      ? ((mcq.metrics.correct / mcq.metrics.attempted) * 100).toFixed(2)
+      : 0;
+
+    res.status(200).json({
+      success: true,
+      metrics: {
+        ...mcq.metrics.toObject(),
+        successRate: `${successRate}%`
+      }
+    });
+  } catch (error) {
+    console.error('Get metrics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching metrics'
+    });
+  }
+};
+
+// @desc    Get MCQ review for a contest (user's answers with correct answers)
+// @route   GET /api/mcq/contest/:contestId/review
+// @access  Private
+export const getContestMCQReview = async (req, res) => {
+  try {
+    const { contestId } = req.params;
+    const userId = req.user._id;
+
+    // Get user's MCQ submission
+    const ContestProgress = (await import('../models/ContestProgress.js')).default;
+    const progress = await ContestProgress.findOne({ contestId, userId });
+
+    if (!progress || progress.status !== 'SUBMITTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Contest not submitted yet'
+      });
+    }
+
+    // Get MCQs for this contest (both direct and library-linked)
+    const directMCQs = await MCQ.find({ contestId }).sort({ order: 1 }).lean();
+
+    const contestMCQLinks = await ContestMCQ.find({ contestId })
+      .populate('mcqId')
+      .sort({ order: 1 })
+      .lean();
+
+    const libraryMCQs = contestMCQLinks
+      .filter(link => link.mcqId !== null)
+      .map(link => ({
+        ...link.mcqId,
+        order: link.order  // Preserve order from ContestMCQ
+      }));
+
+    const allMCQs = [...directMCQs, ...libraryMCQs].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    // Build user answer map
+    const userAnswerMap = {};
+    (progress.mcqProgress?.answers || []).forEach(ans => {
+      userAnswerMap[ans.mcqId?.toString()] = ans.selectedOptions || [];
+    });
+
+    // Build review data
+    const review = allMCQs.map(mcq => {
+      const userAnswer = userAnswerMap[mcq._id.toString()] || [];
+      const correctAnswers = mcq.options
+        .map((opt, idx) => opt.isCorrect ? idx : -1)
+        .filter(idx => idx !== -1);
+
+      // Check if correct
+      const isCorrect = userAnswer.length === correctAnswers.length &&
+        userAnswer.every(ans => correctAnswers.includes(ans));
+
+      return {
+        _id: mcq._id,
+        question: mcq.question,
+        options: mcq.options.map(opt => ({ text: opt.text })), // Don't expose isCorrect directly
+        correctAnswers,
+        userAnswer,
+        isCorrect,
+        marks: mcq.marks,
+        negativeMarks: mcq.negativeMarks,
+        difficulty: mcq.difficulty,
+        category: mcq.category,
+        explanation: mcq.explanation
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      review
+    });
+  } catch (error) {
+    console.error('Get MCQ review error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching review'
     });
   }
 };

@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import contestService from '../../services/contestService';
 import toast from 'react-hot-toast';
-import { 
-  Plus, 
-  Trophy, 
-  Users, 
-  Calendar, 
-  Code, 
+import {
+  Plus,
+  Trophy,
+  Users,
+  Calendar,
+  Code,
   FileQuestion,
   Edit,
   Trash2,
@@ -19,7 +19,7 @@ import {
 const AdminDashboard = () => {
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
-  
+
   const [contests, setContests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -42,7 +42,7 @@ const AdminDashboard = () => {
     try {
       const data = await contestService.getAllContests();
       setContests(data.contests);
-      
+
       // Calculate stats
       const stats = {
         totalContests: data.contests.length,
@@ -51,7 +51,7 @@ const AdminDashboard = () => {
         totalParticipants: data.contests.reduce((sum, c) => sum + (c.participants?.length || 0), 0)
       };
       setStats(stats);
-      
+
       setLoading(false);
     } catch (error) {
       console.error('Error fetching contests:', error);
@@ -105,7 +105,7 @@ const AdminDashboard = () => {
             <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
             <p className="text-gray-400">Manage contests, MCQs, and coding problems</p>
           </div>
-          
+
           <button
             onClick={() => navigate('/admin/contest/create')}
             className="btn-primary"
@@ -257,7 +257,7 @@ const AdminDashboard = () => {
                           >
                             <Eye className="w-4 h-4 text-blue-400" />
                           </button>
-                          
+
                           <button
                             onClick={() => navigate(`/leaderboard/${contest._id}`)}
                             className="p-2 hover:bg-dark-600 rounded-lg transition-colors"
@@ -319,33 +319,21 @@ const AdminDashboard = () => {
           </button>
 
           <button
-            onClick={() => {
-              if (contests.length === 0) {
-                toast.error('Create a contest first');
-              } else {
-                navigate(`/admin/contest/mcq/${contests[0]._id}`);
-              }
-            }}
+            onClick={() => navigate('/admin/mcq-library')}
             className="card hover:border-purple-500 transition-colors text-left"
           >
             <FileQuestion className="w-8 h-8 text-purple-400 mb-3" />
-            <h3 className="text-lg font-bold mb-2">Add MCQs</h3>
-            <p className="text-gray-400 text-sm">Create multiple choice questions for contests</p>
+            <h3 className="text-lg font-bold mb-2">MCQ Library</h3>
+            <p className="text-gray-400 text-sm">Manage reusable MCQ questions with categories</p>
           </button>
 
           <button
-            onClick={() => {
-              if (contests.length === 0) {
-                toast.error('Create a contest first');
-              } else {
-                navigate(`/admin/contest/coding/${contests[0]._id}`);
-              }
-            }}
+            onClick={() => navigate('/admin/coding-library')}
             className="card hover:border-orange-500 transition-colors text-left"
           >
             <Code className="w-8 h-8 text-orange-400 mb-3" />
-            <h3 className="text-lg font-bold mb-2">Add Coding Problems</h3>
-            <p className="text-gray-400 text-sm">Create coding challenges with test cases</p>
+            <h3 className="text-lg font-bold mb-2">Coding Library</h3>
+            <p className="text-gray-400 text-sm">Manage reusable coding problems with test cases</p>
           </button>
         </div>
       </div>

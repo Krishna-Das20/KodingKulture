@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react';
 import toast from 'react-hot-toast';
+import api from '../../services/authService';
+import { GOOGLE_CLIENT_ID } from '../../utils/constants';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -11,9 +13,63 @@ const Login = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { login } = useAuth();
+  const { login, updateUser } = useAuth();
   const navigate = useNavigate();
+
+  // Handle Google Sign-in callback
+  const handleGoogleCallback = useCallback(async (response) => {
+    if (!response.credential) {
+      toast.error('Google sign-in failed');
+      return;
+    }
+
+    setGoogleLoading(true);
+    try {
+      const result = await api.post('/auth/google', { credential: response.credential });
+
+      if (result.data.success) {
+        localStorage.setItem('token', result.data.token);
+        localStorage.setItem('user', JSON.stringify(result.data.user));
+        updateUser(result.data.user);
+        toast.success(result.data.message);
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Google sign-in failed');
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [navigate, updateUser]);
+
+  // Initialize Google Sign-in
+  useEffect(() => {
+    const initGoogle = () => {
+      if (window.google?.accounts?.id) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleCallback,
+        });
+        window.google.accounts.id.renderButton(
+          document.getElementById('google-signin-button'),
+          { theme: 'filled_black', size: 'large', width: '100%', text: 'signin_with' }
+        );
+      }
+    };
+
+    // Load Google Identity Services script
+    if (!window.google) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogle;
+      document.body.appendChild(script);
+    } else {
+      initGoogle();
+    }
+  }, [handleGoogleCallback]);
 
   const handleChange = (e) => {
     setFormData({
@@ -52,6 +108,29 @@ const Login = () => {
 
         {/* Form Card */}
         <div className="card">
+          {/* Google Sign-in Button */}
+          <div className="mb-6">
+            <div
+              id="google-signin-button"
+              className={`w-full flex justify-center ${googleLoading ? 'opacity-50 pointer-events-none' : ''}`}
+            ></div>
+            {googleLoading && (
+              <div className="text-center mt-2 text-gray-400 text-sm">
+                Signing in with Google...
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-dark-600"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-dark-800 text-gray-500">or continue with email</span>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Email */}
             <div>
@@ -102,6 +181,16 @@ const Login = () => {
             >
               {loading ? 'Logging in...' : 'Login'}
             </button>
+
+            {/* Forgot Password Link */}
+            <div className="text-center">
+              <Link
+                to="/forgot-password"
+                className="text-sm text-gray-400 hover:text-primary-400 transition-colors"
+              >
+                Forgot your password?
+              </Link>
+            </div>
           </form>
 
           {/* Register Link */}

@@ -1,5 +1,9 @@
 import Result from '../models/Result.js';
 import Contest from '../models/Contest.js';
+import ContestProgress from '../models/ContestProgress.js';
+import User from '../models/User.js';
+import MCQ from '../models/MCQ.js';
+import CodingProblem from '../models/CodingProblem.js';
 
 // @desc    Generate certificate for user
 // @route   POST /api/leaderboard/:contestId/certificate
@@ -63,7 +67,7 @@ export const getLeaderboard = async (req, res) => {
   try {
     const { contestId } = req.params;
 
-    const results = await Result.find({ 
+    const results = await Result.find({
       contestId,
       status: { $in: ['SUBMITTED', 'EVALUATED'] }
     })
@@ -77,7 +81,7 @@ export const getLeaderboard = async (req, res) => {
       if (i > 0) {
         const prev = results[i - 1];
         const curr = results[i];
-        
+
         if (curr.totalScore === prev.totalScore && curr.timeTaken === prev.timeTaken) {
           results[i].rank = results[i - 1].rank;
         } else {
@@ -178,6 +182,120 @@ export const getContestStats = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error fetching stats'
+    });
+  }
+};
+
+// @desc    Get detailed user time stats (Admin only)
+// @route   GET /api/leaderboard/:contestId/user/:userId/details
+// @access  Private (Admin only)
+export const getUserDetailedStats = async (req, res) => {
+  try {
+    const { contestId, userId } = req.params;
+
+    // Check if requester is admin
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required'
+      });
+    }
+
+    // Get user's contest progress with detailed time tracking
+    const progress = await ContestProgress.findOne({ contestId, userId })
+      .populate('userId', 'name email')
+      .lean();
+
+    if (!progress) {
+      return res.status(404).json({
+        success: false,
+        message: 'No progress found for this user'
+      });
+    }
+
+    // Get result for scores
+    const result = await Result.findOne({ contestId, userId }).lean();
+
+    // Get MCQ questions for titles
+    const mcqIds = progress.mcqProgress?.questionTimes?.map(q => q.questionId) || [];
+    const mcqs = await MCQ.find({ _id: { $in: mcqIds } }).select('question category marks').lean();
+    const mcqMap = new Map(mcqs.map(m => [m._id.toString(), m]));
+
+    // Get coding problems for titles
+    const problemIds = progress.codingProgress?.problemTimes?.map(p => p.problemId) || [];
+    const problems = await CodingProblem.find({ _id: { $in: problemIds } }).select('title category score').lean();
+    const problemMap = new Map(problems.map(p => [p._id.toString(), p]));
+
+    // Build detailed time breakdown
+    const mcqTimeDetails = (progress.mcqProgress?.questionTimes || []).map(qt => {
+      const mcq = mcqMap.get(qt.questionId.toString());
+      return {
+        questionId: qt.questionId,
+        questionText: mcq?.question?.substring(0, 50) + '...' || 'Unknown',
+        category: mcq?.category || 'Unknown',
+        timeSpent: qt.timeSpent,
+        marks: mcq?.marks || 0
+      };
+    });
+
+    const codingTimeDetails = (progress.codingProgress?.problemTimes || []).map(pt => {
+      const problem = problemMap.get(pt.problemId.toString());
+      return {
+        problemId: pt.problemId,
+        title: problem?.title || 'Unknown',
+        category: problem?.category || 'Unknown',
+        timeSpent: pt.timeSpent,
+        score: problem?.score || 0
+      };
+    });
+
+    // Calculate category-wise time
+    const mcqCategoryTime = {};
+    mcqTimeDetails.forEach(q => {
+      const cat = q.category || 'Unknown';
+      mcqCategoryTime[cat] = (mcqCategoryTime[cat] || 0) + q.timeSpent;
+    });
+
+    const codingCategoryTime = {};
+    codingTimeDetails.forEach(p => {
+      const cat = p.category || 'Unknown';
+      codingCategoryTime[cat] = (codingCategoryTime[cat] || 0) + p.timeSpent;
+    });
+
+    res.status(200).json({
+      success: true,
+      userDetails: {
+        user: progress.userId,
+        contestId,
+        startedAt: progress.startedAt,
+        submittedAt: progress.submittedAt,
+        totalTimeSpent: progress.totalTimeSpent,
+        status: progress.status,
+
+        // Section-level summaries
+        mcqSectionTime: progress.mcqProgress?.sectionTimeSpent || 0,
+        codingSectionTime: progress.codingProgress?.sectionTimeSpent || 0,
+
+        // Category-wise breakdown
+        mcqCategoryTime,
+        codingCategoryTime,
+
+        // Per-question/problem details
+        mcqTimeDetails,
+        codingTimeDetails,
+
+        // Scores
+        mcqScore: result?.mcqScore || 0,
+        codingScore: result?.codingScore || 0,
+        totalScore: result?.totalScore || 0,
+        rank: result?.rank || null
+      }
+    });
+  } catch (error) {
+    console.error('Get user detailed stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching user details'
     });
   }
 };

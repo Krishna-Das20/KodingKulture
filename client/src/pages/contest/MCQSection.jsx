@@ -1,55 +1,106 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useContestTimer } from '../../context/ContestTimerContext';
 import mcqService from '../../services/mcqService';
+import api from '../../services/authService';
 import toast from 'react-hot-toast';
-import { Clock, ChevronLeft, ChevronRight, Flag, CheckCircle, Circle } from 'lucide-react';
+import { Clock, ChevronLeft, ChevronRight, Flag, CheckCircle, Circle, ArrowLeft, RotateCcw } from 'lucide-react';
 
 const MCQSection = () => {
   const { contestId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+  const { formattedTime, remainingTime, progress } = useContestTimer();
+
+  // Block re-entry if contest already submitted
+  useEffect(() => {
+    if (progress) {
+      if (progress.status === 'SUBMITTED' || progress.status === 'TIMED_OUT') {
+        toast.error('Contest already submitted. You cannot re-enter.');
+        navigate(`/contest/${contestId}/review`, { replace: true });
+      }
+      if (progress.terminationReason === 'MALPRACTICE') {
+        toast.error('Contest terminated due to malpractice.');
+        navigate(`/contest/${contestId}/review`, { replace: true });
+      }
+    }
+  }, [progress, contestId, navigate]);
+
   const [mcqs, setMcqs] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState({});
-  const [timeRemaining, setTimeRemaining] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [flagged, setFlagged] = useState(new Set());
   const [contestInfo, setContestInfo] = useState(null);
 
+  // Time tracking
+  const questionStartTime = useRef(Date.now());
+  const sectionStartTime = useRef(Date.now());
+
   useEffect(() => {
     fetchMCQs();
+    // Load saved answers from localStorage
+    const savedAnswers = localStorage.getItem(`mcq_answers_${contestId}`);
+    if (savedAnswers) {
+      setAnswers(JSON.parse(savedAnswers));
+    }
   }, [contestId]);
 
+  // Save answers to localStorage whenever they change
   useEffect(() => {
-    if (timeRemaining === null) return;
+    if (Object.keys(answers).length > 0) {
+      localStorage.setItem(`mcq_answers_${contestId}`, JSON.stringify(answers));
+    }
+  }, [answers, contestId]);
 
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          handleSubmit();
-          return 0;
-        }
-        return prev - 1;
+  // Track time when changing questions
+  const trackQuestionTime = async (questionId, timeSpent) => {
+    try {
+      await api.post(`/contests/${contestId}/track-time`, {
+        type: 'mcq',
+        questionId,
+        timeSpent
       });
-    }, 1000);
+    } catch (error) {
+      console.error('Error tracking time:', error);
+    }
+  };
 
-    return () => clearInterval(timer);
-  }, [timeRemaining]);
+  // Handle question navigation with time tracking
+  const handleQuestionChange = (newQuestion) => {
+    if (mcqs.length === 0) return;
+
+    const currentMCQ = mcqs[currentQuestion];
+    const timeSpent = Math.floor((Date.now() - questionStartTime.current) / 1000);
+
+    // Track time for the question we're leaving
+    if (currentMCQ && timeSpent > 0) {
+      trackQuestionTime(currentMCQ._id, timeSpent);
+    }
+
+    // Reset timer for new question
+    questionStartTime.current = Date.now();
+    setCurrentQuestion(newQuestion);
+  };
+
+  // Track section time when leaving MCQ section
+  useEffect(() => {
+    return () => {
+      const sectionTimeSpent = Math.floor((Date.now() - sectionStartTime.current) / 1000);
+      api.post(`/contests/${contestId}/track-time`, {
+        type: 'mcq-section',
+        timeSpent: sectionTimeSpent
+      }).catch(err => console.error('Error tracking section time:', err));
+    };
+  }, [contestId]);
 
   const fetchMCQs = async () => {
     try {
       const data = await mcqService.getMCQsByContest(contestId);
       setMcqs(data.mcqs);
       setContestInfo(data.contest);
-      
-      // Set timer based on contest duration
-      if (data.contest && data.contest.duration) {
-        setTimeRemaining(data.contest.duration * 60); // Convert to seconds
-      }
-      
       setLoading(false);
     } catch (error) {
       console.error('Error fetching MCQs:', error);
@@ -60,13 +111,13 @@ const MCQSection = () => {
 
   const handleOptionSelect = (mcqId, optionIndex) => {
     const mcq = mcqs.find(m => m._id === mcqId);
-    
+
     if (!mcq || !mcq.options) return;
-    
+
     // Determine if multiple answers based on options (since correctAnswers might be hidden)
     const correctCount = mcq.options.filter(opt => opt.isCorrect).length;
     const isMultipleAnswer = correctCount > 1;
-    
+
     if (isMultipleAnswer) {
       // Multiple correct answers - toggle selection
       setAnswers(prev => {
@@ -83,11 +134,23 @@ const MCQSection = () => {
     }
   };
 
+  const resetCurrentAnswer = () => {
+    const mcqId = mcqs[currentQuestion]._id;
+    setAnswers(prev => {
+      const newAnswers = { ...prev };
+      delete newAnswers[mcqId];
+      // Also update localStorage
+      localStorage.setItem(`mcq_answers_${contestId}`, JSON.stringify(newAnswers));
+      return newAnswers;
+    });
+    toast.success('Answer cleared');
+  };
+
   const handleSubmit = async () => {
     if (submitting) return;
 
     const unanswered = mcqs.filter(mcq => !answers[mcq._id] || answers[mcq._id].length === 0);
-    
+
     if (unanswered.length > 0 && timeRemaining > 0) {
       const confirm = window.confirm(
         `You have ${unanswered.length} unanswered question(s). Are you sure you want to submit?`
@@ -104,7 +167,7 @@ const MCQSection = () => {
       }));
 
       const response = await mcqService.submitMCQAnswers(contestId, formattedAnswers);
-      
+
       toast.success('MCQ section submitted successfully!');
       navigate(`/contest/${contestId}/result`);
     } catch (error) {
@@ -155,7 +218,7 @@ const MCQSection = () => {
   }
 
   const currentMCQ = mcqs[currentQuestion];
-  
+
   // Check if currentMCQ and its properties exist
   if (!currentMCQ || !currentMCQ.options) {
     return (
@@ -178,25 +241,32 @@ const MCQSection = () => {
       <div className="bg-dark-800 border-b border-dark-700 sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold">{contestInfo?.title || 'MCQ Section'}</h1>
-              <p className="text-gray-400 text-sm">Question {currentQuestion + 1} of {mcqs.length}</p>
-            </div>
-            
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2 text-lg font-mono">
-                <Clock className={`w-5 h-5 ${timeRemaining < 300 ? 'text-red-500' : 'text-primary-500'}`} />
-                <span className={timeRemaining < 300 ? 'text-red-500' : 'text-white'}>
-                  {formatTime(timeRemaining)}
-                </span>
-              </div>
-              
+            <div className="flex items-center gap-4">
               <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="btn-primary"
+                onClick={() => navigate(`/contest/${contestId}/hub`)}
+                className="text-gray-400 hover:text-white flex items-center gap-2"
               >
-                {submitting ? 'Submitting...' : 'Submit Test'}
+                <ArrowLeft className="w-5 h-5" />
+                Back to Hub
+              </button>
+              <div>
+                <h1 className="text-xl font-bold">{contestInfo?.title || 'MCQ Section'}</h1>
+                <p className="text-gray-400 text-sm">Question {currentQuestion + 1} of {mcqs.length}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-lg font-bold ${remainingTime < 300 ? 'bg-red-500/20 text-red-500 animate-pulse' : 'bg-dark-700 text-white'
+                }`}>
+                <Clock className="w-5 h-5" />
+                <span>{formattedTime}</span>
+              </div>
+
+              <button
+                onClick={() => navigate(`/contest/${contestId}/hub`)}
+                className="btn-secondary"
+              >
+                Save & Back to Hub
               </button>
             </div>
           </div>
@@ -217,25 +287,41 @@ const MCQSection = () => {
                     <span className="badge-info">{currentMCQ.category}</span>
                   )}
                 </div>
-                
+
                 <button
                   onClick={() => toggleFlag(currentQuestion)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    flagged.has(currentQuestion) 
-                      ? 'bg-yellow-500/20 text-yellow-500' 
-                      : 'bg-dark-700 text-gray-400 hover:text-yellow-500'
-                  }`}
+                  className={`p-2 rounded-lg transition-colors ${flagged.has(currentQuestion)
+                    ? 'bg-yellow-500/20 text-yellow-500'
+                    : 'bg-dark-700 text-gray-400 hover:text-yellow-500'
+                    }`}
                 >
                   <Flag className="w-5 h-5" fill={flagged.has(currentQuestion) ? 'currentColor' : 'none'} />
                 </button>
               </div>
 
               {/* Question Text */}
-              <div className="mb-6">
+              <div
+                className="mb-6 select-none"
+                onCopy={(e) => e.preventDefault()}
+                onContextMenu={(e) => e.preventDefault()}
+              >
                 <p className="text-lg text-gray-200 leading-relaxed whitespace-pre-wrap">
                   {currentMCQ.question}
                 </p>
-                
+
+                {/* Question Image (if exists) */}
+                {currentMCQ.imageUrl && (
+                  <div className="mt-4">
+                    <img
+                      src={currentMCQ.imageUrl}
+                      alt="Question"
+                      className="max-w-full max-h-80 rounded-lg border border-dark-600"
+                      onContextMenu={(e) => e.preventDefault()}
+                      draggable="false"
+                    />
+                  </div>
+                )}
+
                 {isMultipleAnswer && (
                   <p className="text-sm text-primary-400 mt-2">
                     (Multiple answers possible - select all that apply)
@@ -253,16 +339,14 @@ const MCQSection = () => {
                     <button
                       key={index}
                       onClick={() => handleOptionSelect(currentMCQ._id, index)}
-                      className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                        isSelected
-                          ? 'border-primary-500 bg-primary-500/10'
-                          : 'border-dark-600 bg-dark-700/50 hover:border-dark-500'
-                      }`}
+                      className={`w-full text-left p-4 rounded-lg border-2 transition-all ${isSelected
+                        ? 'border-primary-500 bg-primary-500/10'
+                        : 'border-dark-600 bg-dark-700/50 hover:border-dark-500'
+                        }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                          isSelected ? 'border-primary-500 bg-primary-500' : 'border-gray-500'
-                        }`}>
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${isSelected ? 'border-primary-500 bg-primary-500' : 'border-gray-500'
+                          }`}>
                           {isSelected && <CheckCircle className="w-4 h-4 text-white" />}
                         </div>
                         <div className="flex-1">
@@ -275,22 +359,34 @@ const MCQSection = () => {
                 })}
               </div>
 
-              {/* Marks Info */}
+              {/* Marks Info + Reset Button */}
               <div className="mt-6 p-4 bg-dark-700/50 rounded-lg flex items-center justify-between text-sm">
-                <span className="text-gray-400">
-                  Marks: <span className="text-green-400 font-semibold">+{currentMCQ.marks}</span>
-                </span>
-                {currentMCQ.negativeMarks > 0 && (
+                <div className="flex items-center gap-6">
                   <span className="text-gray-400">
-                    Negative: <span className="text-red-400 font-semibold">-{currentMCQ.negativeMarks}</span>
+                    Marks: <span className="text-green-400 font-semibold">+{currentMCQ.marks}</span>
                   </span>
-                )}
+                  {currentMCQ.negativeMarks > 0 && (
+                    <span className="text-gray-400">
+                      Negative: <span className="text-red-400 font-semibold">-{currentMCQ.negativeMarks}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Reset Button */}
+                <button
+                  onClick={resetCurrentAnswer}
+                  disabled={!selectedOptions || selectedOptions.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dark-700 text-white hover:bg-dark-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Clear Answer</span>
+                </button>
               </div>
 
               {/* Navigation */}
               <div className="flex items-center justify-between mt-6 pt-6 border-t border-dark-700">
                 <button
-                  onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
+                  onClick={() => handleQuestionChange(Math.max(0, currentQuestion - 1))}
                   disabled={currentQuestion === 0}
                   className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -299,7 +395,7 @@ const MCQSection = () => {
                 </button>
 
                 <button
-                  onClick={() => setCurrentQuestion(prev => Math.min(mcqs.length - 1, prev + 1))}
+                  onClick={() => handleQuestionChange(Math.min(mcqs.length - 1, currentQuestion + 1))}
                   disabled={currentQuestion === mcqs.length - 1}
                   className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -314,7 +410,7 @@ const MCQSection = () => {
           <div className="lg:col-span-1">
             <div className="card sticky top-24">
               <h3 className="text-lg font-bold mb-4">Question Palette</h3>
-              
+
               <div className="grid grid-cols-5 gap-2 mb-6">
                 {mcqs.map((mcq, index) => {
                   const isAnswered = answers[mcq._id] && answers[mcq._id].length > 0;
@@ -324,14 +420,13 @@ const MCQSection = () => {
                   return (
                     <button
                       key={mcq._id}
-                      onClick={() => setCurrentQuestion(index)}
-                      className={`aspect-square rounded-lg text-sm font-semibold transition-all relative ${
-                        isCurrent
-                          ? 'bg-primary-500 text-white scale-110'
-                          : isAnswered
+                      onClick={() => handleQuestionChange(index)}
+                      className={`aspect-square rounded-lg text-sm font-semibold transition-all relative ${isCurrent
+                        ? 'bg-primary-500 text-white scale-110'
+                        : isAnswered
                           ? 'bg-green-500/20 text-green-400 border border-green-500/50'
                           : 'bg-dark-700 text-gray-400 hover:bg-dark-600'
-                      }`}
+                        }`}
                     >
                       {index + 1}
                       {isFlagged && (

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { Code2, Trophy, Users, Award, ArrowRight, Zap, Target, Medal } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 // Animated counter component
 const AnimatedCounter = ({ target, suffix = '', duration = 2000 }) => {
@@ -53,6 +54,8 @@ const AnimatedCounter = ({ target, suffix = '', duration = 2000 }) => {
 };
 
 const Home = () => {
+  const { isAuthenticated } = useAuth();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-dark-950 via-dark-900 to-dark-950">
       {/* Hero Section */}
@@ -83,9 +86,11 @@ const Home = () => {
                 Browse Contests
                 <ArrowRight className="w-5 h-5" />
               </Link>
-              <Link to="/register" className="btn-outline text-lg px-8 py-4">
-                Get Started Free
-              </Link>
+              {!isAuthenticated && (
+                <Link to="/register" className="btn-outline text-lg px-8 py-4">
+                  Get Started Free
+                </Link>
+              )}
             </div>
 
             {/* Stats */}
@@ -191,24 +196,46 @@ const Home = () => {
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-20">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="card glow-effect">
-            <Award className="w-16 h-16 text-primary-500 mx-auto mb-6" />
-            <h2 className="text-4xl font-bold text-white mb-4">Ready to Start?</h2>
-            <p className="text-xl text-gray-400 mb-8">
-              Join thousands of developers competing in weekly contests
-            </p>
-            <Link to="/register" className="btn-primary text-lg px-8 py-4 inline-flex items-center gap-2">
-              Create Free Account
-              <ArrowRight className="w-5 h-5" />
-            </Link>
+      {/* CTA Section - Only show for non-authenticated users */}
+      {!isAuthenticated && (
+        <section className="py-20">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div className="card glow-effect">
+              <Award className="w-16 h-16 text-primary-500 mx-auto mb-6" />
+              <h2 className="text-4xl font-bold text-white mb-4">Ready to Start?</h2>
+              <p className="text-xl text-gray-400 mb-8">
+                Join thousands of developers competing in weekly contests
+              </p>
+              <Link to="/register" className="btn-primary text-lg px-8 py-4 inline-flex items-center gap-2">
+                Create Free Account
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
+
+      {/* CTA Section - For authenticated users */}
+      {isAuthenticated && (
+        <section className="py-20">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <div className="card glow-effect">
+              <Trophy className="w-16 h-16 text-primary-500 mx-auto mb-6" />
+              <h2 className="text-4xl font-bold text-white mb-4">Ready to Compete?</h2>
+              <p className="text-xl text-gray-400 mb-8">
+                Browse upcoming contests and test your skills
+              </p>
+              <Link to="/contests" className="btn-primary text-lg px-8 py-4 inline-flex items-center gap-2">
+                View Contests
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 };
 
 export default Home;
+

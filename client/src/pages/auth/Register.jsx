@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 import { User, Mail, Lock, Building2, Phone, Eye, EyeOff, UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
+import api from '../../services/authService';
+import { GOOGLE_CLIENT_ID } from '../../utils/constants';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -14,9 +15,60 @@ const Register = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const { register } = useAuth();
   const navigate = useNavigate();
+
+  // Handle Google Sign-in callback
+  const handleGoogleCallback = useCallback(async (response) => {
+    if (!response.credential) {
+      toast.error('Google sign-in failed');
+      return;
+    }
+
+    setGoogleLoading(true);
+    try {
+      const result = await api.post('/auth/google', { credential: response.credential });
+
+      if (result.data.success) {
+        localStorage.setItem('token', result.data.token);
+        localStorage.setItem('user', JSON.stringify(result.data.user));
+        toast.success(result.data.message);
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Google sign-in failed');
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [navigate]);
+
+  // Initialize Google Sign-in
+  useEffect(() => {
+    const initGoogle = () => {
+      if (window.google?.accounts?.id) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleGoogleCallback,
+        });
+        window.google.accounts.id.renderButton(
+          document.getElementById('google-signup-button'),
+          { theme: 'filled_black', size: 'large', width: '100%', text: 'signup_with' }
+        );
+      }
+    };
+
+    if (!window.google) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initGoogle;
+      document.body.appendChild(script);
+    } else {
+      initGoogle();
+    }
+  }, [handleGoogleCallback]);
 
   const handleChange = (e) => {
     setFormData({
@@ -27,18 +79,25 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
 
-    const result = await register(formData);
-
-    if (result.success) {
-      toast.success('Registration successful!');
-      navigate('/dashboard');
-    } else {
-      toast.error(result.message || 'Registration failed');
+    if (formData.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
     }
 
-    setLoading(false);
+    setLoading(true);
+    try {
+      const response = await api.post('/auth/send-otp', formData);
+
+      if (response.data.success) {
+        toast.success('OTP sent to your email!');
+        navigate('/verify-otp', { state: { email: formData.email } });
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -55,6 +114,29 @@ const Register = () => {
 
         {/* Form Card */}
         <div className="card">
+          {/* Google Sign-up Button */}
+          <div className="mb-6">
+            <div
+              id="google-signup-button"
+              className={`w-full flex justify-center ${googleLoading ? 'opacity-50 pointer-events-none' : ''}`}
+            ></div>
+            {googleLoading && (
+              <div className="text-center mt-2 text-gray-400 text-sm">
+                Signing up with Google...
+              </div>
+            )}
+          </div>
+
+          {/* Divider */}
+          <div className="relative mb-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-dark-600"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-dark-800 text-gray-500">or register with email</span>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Name */}
             <div>

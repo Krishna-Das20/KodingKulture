@@ -3,8 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import adminService from '../../services/adminService';
 import codingService from '../../services/codingService';
+import api from '../../services/authService';
 import toast from 'react-hot-toast';
-import { Save, X, Plus, Trash2, Edit, ArrowLeft, Code } from 'lucide-react';
+import ImageUpload from '../../components/common/ImageUpload';
+import { Save, X, Plus, Trash2, Edit, ArrowLeft, Code, Library, Search } from 'lucide-react';
+
+const CODING_CATEGORIES = ['GENERAL', 'DSA', 'ALGORITHMS', 'DATABASE', 'SYSTEM_DESIGN'];
 
 const ManageCodingProblems = () => {
   const { contestId } = useParams();
@@ -14,8 +18,15 @@ const ManageCodingProblems = () => {
   const [problems, setProblems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
   const [editingProblem, setEditingProblem] = useState(null);
-  
+
+  // Library state
+  const [libraryProblems, setLibraryProblems] = useState([]);
+  const [selectedLibraryProblems, setSelectedLibraryProblems] = useState([]);
+  const [libraryFilter, setLibraryFilter] = useState({ category: '', search: '' });
+  const [libraryLoading, setLibraryLoading] = useState(false);
+
   const [formData, setFormData] = useState({
     contestId: contestId,
     title: '',
@@ -30,7 +41,9 @@ const ManageCodingProblems = () => {
     timeLimit: 2000,
     memoryLimit: 256,
     tags: [],
-    order: 1
+    order: 1,
+    imageUrl: null,
+    imagePublicId: null
   });
 
   useEffect(() => {
@@ -54,6 +67,55 @@ const ManageCodingProblems = () => {
     }
   };
 
+  const fetchLibraryProblems = async () => {
+    setLibraryLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (libraryFilter.category) params.append('category', libraryFilter.category);
+      if (libraryFilter.search) params.append('search', libraryFilter.search);
+
+      const response = await api.get(`/coding/library?${params}`);
+      setLibraryProblems(response.data.problems);
+    } catch (error) {
+      toast.error('Failed to load library');
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showLibrary) {
+      fetchLibraryProblems();
+    }
+  }, [showLibrary, libraryFilter]);
+
+  const handleAddFromLibrary = async () => {
+    if (selectedLibraryProblems.length === 0) {
+      toast.error('Select at least one problem');
+      return;
+    }
+
+    try {
+      await api.post(`/coding/contest/${contestId}/add-from-library`, {
+        problemIds: selectedLibraryProblems
+      });
+      toast.success(`${selectedLibraryProblems.length} problems added to contest`);
+      setShowLibrary(false);
+      setSelectedLibraryProblems([]);
+      fetchProblems();
+    } catch (error) {
+      toast.error('Failed to add problems');
+    }
+  };
+
+  const toggleLibrarySelection = (problemId) => {
+    setSelectedLibraryProblems(prev =>
+      prev.includes(problemId)
+        ? prev.filter(id => id !== problemId)
+        : [...prev, problemId]
+    );
+  };
+
   const resetForm = () => {
     setFormData({
       contestId: contestId,
@@ -69,7 +131,9 @@ const ManageCodingProblems = () => {
       timeLimit: 2000,
       memoryLimit: 256,
       tags: [],
-      order: problems.length + 1
+      order: problems.length + 1,
+      imageUrl: null,
+      imagePublicId: null
     });
     setEditingProblem(null);
     setShowForm(false);
@@ -90,29 +154,39 @@ const ManageCodingProblems = () => {
       timeLimit: problem.timeLimit,
       memoryLimit: problem.memoryLimit,
       tags: problem.tags || [],
-      order: problem.order
+      order: problem.order,
+      imageUrl: problem.imageUrl || null,
+      imagePublicId: problem.imagePublicId || null
     });
     setEditingProblem(problem);
     setShowForm(true);
   };
 
-  const handleDelete = async (problemId) => {
-    if (!window.confirm('Are you sure you want to delete this problem?')) return;
+  const handleDelete = async (problem) => {
+    // Check if this is a library problem linked to contest (has contestProblemId)
+    const isLibraryLinked = !!problem.contestProblemId;
 
     try {
-      await adminService.deleteCodingProblem(problemId);
-      toast.success('Problem deleted successfully');
+      if (isLibraryLinked) {
+        // Only remove from contest, keep in library
+        await adminService.removeCodingFromContest(contestId, problem._id);
+        toast.success('Problem removed from contest');
+      } else {
+        // Delete entirely (was created in this contest directly)
+        await adminService.deleteCodingProblem(problem._id);
+        toast.success('Problem deleted successfully');
+      }
       fetchProblems();
     } catch (error) {
-      console.error('Error deleting problem:', error);
-      toast.error('Failed to delete problem');
+      console.error('Error removing problem:', error);
+      toast.error('Failed to remove problem');
     }
   };
 
   const handleExampleChange = (index, field, value) => {
     setFormData(prev => ({
       ...prev,
-      examples: prev.examples.map((ex, i) => 
+      examples: prev.examples.map((ex, i) =>
         i === index ? { ...ex, [field]: value } : ex
       )
     }));
@@ -139,7 +213,7 @@ const ManageCodingProblems = () => {
   const handleTestcaseChange = (index, field, value) => {
     setFormData(prev => ({
       ...prev,
-      testcases: prev.testcases.map((tc, i) => 
+      testcases: prev.testcases.map((tc, i) =>
         i === index ? { ...tc, [field]: value } : tc
       )
     }));
@@ -194,7 +268,9 @@ const ManageCodingProblems = () => {
         })),
         score: parseInt(formData.score),
         timeLimit: parseInt(formData.timeLimit),
-        memoryLimit: parseInt(formData.memoryLimit)
+        memoryLimit: parseInt(formData.memoryLimit),
+        imageUrl: formData.imageUrl,
+        imagePublicId: formData.imagePublicId
       };
 
       if (editingProblem) {
@@ -238,23 +314,32 @@ const ManageCodingProblems = () => {
               <p className="text-gray-400">{problems.length} problems created</p>
             </div>
           </div>
-          
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="btn-primary"
-          >
-            {showForm ? (
-              <>
-                <X className="w-5 h-5 mr-2" />
-                Cancel
-              </>
-            ) : (
-              <>
-                <Plus className="w-5 h-5 mr-2" />
-                Add Problem
-              </>
-            )}
-          </button>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowLibrary(true)}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Library className="w-5 h-5" />
+              Add from Library
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="btn-primary"
+            >
+              {showForm ? (
+                <>
+                  <X className="w-5 h-5 mr-2" />
+                  Cancel
+                </>
+              ) : (
+                <>
+                  <Plus className="w-5 h-5 mr-2" />
+                  Create New
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Problem Form */}
@@ -263,7 +348,7 @@ const ManageCodingProblems = () => {
             <h2 className="text-xl font-bold mb-6">
               {editingProblem ? 'Edit Problem' : 'Create New Problem'}
             </h2>
-            
+
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Basic Info */}
               <div className="space-y-4">
@@ -440,7 +525,7 @@ const ManageCodingProblems = () => {
                             <span className="text-gray-400">Hidden</span>
                           </label>
                         </div>
-                        
+
                         {formData.testcases.length > 1 && (
                           <button
                             type="button"
@@ -549,6 +634,13 @@ const ManageCodingProblems = () => {
                 </div>
               </div>
 
+              {/* Image Upload */}
+              <ImageUpload
+                imageUrl={formData.imageUrl}
+                onImageChange={(url, publicId) => setFormData({ ...formData, imageUrl: url, imagePublicId: publicId })}
+                onImageRemove={() => setFormData({ ...formData, imageUrl: null, imagePublicId: null })}
+              />
+
               {/* Submit */}
               <div className="flex justify-end gap-4 pt-4 border-t border-dark-700">
                 <button
@@ -570,17 +662,25 @@ const ManageCodingProblems = () => {
         {/* Problems List */}
         <div className="card">
           <h2 className="text-xl font-bold mb-6">All Problems</h2>
-          
+
           {problems.length === 0 ? (
             <div className="text-center py-12">
-              <Code className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400 mb-4">No problems created yet</p>
-              <button
-                onClick={() => setShowForm(true)}
-                className="btn-primary"
-              >
-                Create First Problem
-              </button>
+              <p className="text-gray-400 mb-4">No problems in this contest yet</p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={() => setShowLibrary(true)}
+                  className="btn-secondary"
+                >
+                  <Library className="w-5 h-5 mr-2" />
+                  Add from Library
+                </button>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="btn-primary"
+                >
+                  Create New Problem
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -597,7 +697,7 @@ const ManageCodingProblems = () => {
                       </div>
                       <p className="text-gray-400 text-sm mb-3 line-clamp-2">{problem.description}</p>
                     </div>
-                    
+
                     <div className="flex gap-2 ml-4">
                       <button
                         onClick={() => handleEdit(problem)}
@@ -606,7 +706,7 @@ const ManageCodingProblems = () => {
                         <Edit className="w-4 h-4 text-blue-400" />
                       </button>
                       <button
-                        onClick={() => handleDelete(problem._id)}
+                        onClick={() => handleDelete(problem)}
                         className="p-2 hover:bg-dark-600 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4 text-red-400" />
@@ -632,6 +732,105 @@ const ManageCodingProblems = () => {
           )}
         </div>
       </div>
+
+      {/* Library Modal */}
+      {showLibrary && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col">
+            <div className="p-6 border-b border-dark-700 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Select from Coding Library</h2>
+                <p className="text-gray-400 text-sm">{selectedLibraryProblems.length} selected</p>
+              </div>
+              <button onClick={() => { setShowLibrary(false); setSelectedLibraryProblems([]); }}>
+                <X className="w-6 h-6 text-gray-400 hover:text-white" />
+              </button>
+            </div>
+
+            {/* Filters */}
+            <div className="p-4 border-b border-dark-700 flex gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search problems..."
+                  value={libraryFilter.search}
+                  onChange={(e) => setLibraryFilter({ ...libraryFilter, search: e.target.value })}
+                  className="input pl-10 w-full"
+                />
+              </div>
+              <select
+                value={libraryFilter.category}
+                onChange={(e) => setLibraryFilter({ ...libraryFilter, category: e.target.value })}
+                className="input w-48"
+              >
+                <option value="">All Categories</option>
+                {CODING_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Problem List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {libraryLoading ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
+                </div>
+              ) : libraryProblems.length === 0 ? (
+                <p className="text-center text-gray-400 py-8">No problems in library</p>
+              ) : (
+                libraryProblems.map(problem => (
+                  <div
+                    key={problem._id}
+                    onClick={() => toggleLibrarySelection(problem._id)}
+                    className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedLibraryProblems.includes(problem._id)
+                      ? 'border-primary-500 bg-primary-500/10'
+                      : 'border-dark-600 hover:border-dark-500'
+                      }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedLibraryProblems.includes(problem._id)}
+                        onChange={() => { }}
+                        className="w-5 h-5 mt-1 rounded"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-bold">{problem.title}</span>
+                          <span className={`badge-${problem.difficulty.toLowerCase()} text-xs`}>
+                            {problem.difficulty}
+                          </span>
+                          <span className="text-gray-500 text-xs">{problem.score} pts</span>
+                        </div>
+                        <p className="text-gray-400 text-sm line-clamp-2">{problem.description}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-dark-700 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowLibrary(false); setSelectedLibraryProblems([]); }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddFromLibrary}
+                disabled={selectedLibraryProblems.length === 0}
+                className="btn-primary disabled:opacity-50"
+              >
+                Add {selectedLibraryProblems.length} Problems
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

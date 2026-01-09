@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useContestTimer } from '../../context/ContestTimerContext';
 import codingService from '../../services/codingService';
+import api from '../../services/authService';
 import Editor from '@monaco-editor/react';
 import toast from 'react-hot-toast';
 import {
@@ -16,7 +18,14 @@ import {
   Loader,
   Terminal,
   FileCode,
-  CheckSquare
+  CheckSquare,
+  ArrowLeft,
+  ChevronUp,
+  ChevronDown,
+  GripVertical,
+  GripHorizontal,
+  Minimize2,
+  Maximize2
 } from 'lucide-react';
 
 const LANGUAGE_OPTIONS = [
@@ -33,10 +42,26 @@ const CodingSection = () => {
   const { contestId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { formattedTime, remainingTime, progress } = useContestTimer();
+
+  // Block re-entry if contest already submitted
+  useEffect(() => {
+    if (progress) {
+      if (progress.status === 'SUBMITTED' || progress.status === 'TIMED_OUT') {
+        toast.error('Contest already submitted. You cannot re-enter.');
+        navigate(`/contest/${contestId}/review`, { replace: true });
+      }
+      if (progress.terminationReason === 'MALPRACTICE') {
+        toast.error('Contest terminated due to malpractice.');
+        navigate(`/contest/${contestId}/review`, { replace: true });
+      }
+    }
+  }, [progress, contestId, navigate]);
 
   const [problems, setProblems] = useState([]);
   const [currentProblem, setCurrentProblem] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState(LANGUAGE_OPTIONS[3]); // Python default
+  const [languageByProblem, setLanguageByProblem] = useState({}); // Store language per problem
   const [code, setCode] = useState(LANGUAGE_OPTIONS[3].template);
   const [codeByProblem, setCodeByProblem] = useState({}); // Store code per problem
   const [customInput, setCustomInput] = useState('');
@@ -48,8 +73,20 @@ const CodingSection = () => {
   const [activeTab, setActiveTab] = useState('description'); // description, submissions
   const [submissions, setSubmissions] = useState([]);
   const [testResults, setTestResults] = useState(null);
-  const [timeRemaining, setTimeRemaining] = useState(null);
   const [contestInfo, setContestInfo] = useState(null);
+
+  // Resizable panel states
+  const [leftPanelWidth, setLeftPanelWidth] = useState(50); // percentage
+  const [ioHeight, setIoHeight] = useState(250); // pixels
+  const [isIoMinimized, setIsIoMinimized] = useState(false);
+  const [isResizingHorizontal, setIsResizingHorizontal] = useState(false);
+  const [isResizingVertical, setIsResizingVertical] = useState(false);
+  const containerRef = useRef(null);
+  const rightPanelRef = useRef(null);
+
+  // Time tracking
+  const problemStartTime = useRef(Date.now());
+  const sectionStartTime = useRef(Date.now());
 
   useEffect(() => {
     fetchProblems();
@@ -61,18 +98,28 @@ const CodingSection = () => {
     }
   }, [currentProblem, problems]);
 
-  // Save and restore code, customInput, and output when switching problems (with localStorage)
+  // Save and restore code, language, customInput, and output when switching problems (with localStorage)
   useEffect(() => {
     if (problems.length > 0) {
       const problemId = problems[currentProblem]?._id;
       if (problemId) {
+        // Restore language first
+        const langKey = `lang_${contestId}_${problemId}`;
+        const savedLangId = localStorage.getItem(langKey) || languageByProblem[problemId];
+        let restoredLanguage = LANGUAGE_OPTIONS[3]; // Default Python
+        if (savedLangId) {
+          const found = LANGUAGE_OPTIONS.find(l => l.id === parseInt(savedLangId));
+          if (found) restoredLanguage = found;
+        }
+        setSelectedLanguage(restoredLanguage);
+
         // Restore code
         const codeKey = `code_${contestId}_${problemId}`;
         const savedCode = localStorage.getItem(codeKey) || codeByProblem[problemId];
         if (savedCode !== undefined && savedCode !== null) {
           setCode(savedCode);
         } else {
-          setCode(selectedLanguage.template);
+          setCode(restoredLanguage.template);
         }
 
         // Restore customInput
@@ -109,77 +156,129 @@ const CodingSection = () => {
     }
   }, [code, customInput, output, currentProblem, problems, contestId]);
 
-  // Timer countdown with auto-submit
+  // Save language to localStorage whenever it changes
   useEffect(() => {
-    if (timeRemaining === null) return;
-
-    const timer = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          // Auto-submit all problems when time runs out
-          toast.error('Time is up! Auto-submitting...');
-          handleAutoSubmit();
-          localStorage.removeItem(`timer_${contestId}`);
-          return 0;
-        }
-        const newTime = prev - 1;
-        // Save to localStorage on each tick
-        localStorage.setItem(`timer_${contestId}`, newTime.toString());
-        return newTime;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [timeRemaining]);
-
-  // Auto-submit function for when time runs out
-  const handleAutoSubmit = async () => {
-    if (code.trim()) {
-      try {
-        const problem = problems[currentProblem];
-        await codingService.submitCode(contestId, {
-          problemId: problem._id,
-          sourceCode: code,
-          languageId: selectedLanguage.id
-        });
-        toast.success('Code auto-submitted!');
-      } catch (error) {
-        console.error('Auto-submit error:', error);
-      }
+    if (problems.length > 0 && problems[currentProblem]) {
+      const problemId = problems[currentProblem]._id;
+      const langKey = `lang_${contestId}_${problemId}`;
+      setLanguageByProblem(prev => ({ ...prev, [problemId]: selectedLanguage.id }));
+      localStorage.setItem(langKey, selectedLanguage.id.toString());
     }
-    navigate(`/contest/${contestId}/result`);
+  }, [selectedLanguage, currentProblem, problems, contestId]);
+
+  // Track time when changing problems
+  const trackProblemTime = async (problemId, timeSpent) => {
+    try {
+      await api.post(`/contests/${contestId}/track-time`, {
+        type: 'coding',
+        problemId,
+        timeSpent
+      });
+    } catch (error) {
+      console.error('Error tracking time:', error);
+    }
   };
 
-  const formatTime = (seconds) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  // Handle problem navigation with time tracking
+  const handleProblemChange = (newProblem) => {
+    if (problems.length === 0) return;
+
+    const currentProb = problems[currentProblem];
+    const timeSpent = Math.floor((Date.now() - problemStartTime.current) / 1000);
+
+    // Track time for the problem we're leaving
+    if (currentProb && timeSpent > 0) {
+      trackProblemTime(currentProb._id, timeSpent);
+    }
+
+    // Reset timer for new problem
+    problemStartTime.current = Date.now();
+    setCurrentProblem(newProblem);
   };
+
+  // Track section time when leaving coding section
+  useEffect(() => {
+    return () => {
+      const sectionTimeSpent = Math.floor((Date.now() - sectionStartTime.current) / 1000);
+      api.post(`/contests/${contestId}/track-time`, {
+        type: 'coding-section',
+        timeSpent: sectionTimeSpent
+      }).catch(err => console.error('Error tracking section time:', err));
+    };
+  }, [contestId]);
+
+  // Horizontal resize (between left and right panels)
+  const handleHorizontalMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsResizingHorizontal(true);
+  }, []);
+
+  // Vertical resize (between editor and I/O)
+  const handleVerticalMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsResizingVertical(true);
+  }, []);
+
+  // Handle mouse move for resizing with smooth updates
+  useEffect(() => {
+    let animationFrameId = null;
+
+    const handleMouseMove = (e) => {
+      // Cancel any pending animation frame
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+
+      animationFrameId = requestAnimationFrame(() => {
+        if (isResizingHorizontal && containerRef.current) {
+          const containerRect = containerRef.current.getBoundingClientRect();
+          const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+          // Allow code editor to take more space (min 15% for problem, max 85%)
+          setLeftPanelWidth(Math.min(Math.max(15, newWidth), 85));
+        }
+        if (isResizingVertical && rightPanelRef.current) {
+          const panelRect = rightPanelRef.current.getBoundingClientRect();
+          const newHeight = panelRect.bottom - e.clientY;
+          // Better constraints: min 80px, max 60% of panel height
+          const maxHeight = panelRect.height * 0.6;
+          setIoHeight(Math.min(Math.max(80, newHeight), maxHeight));
+        }
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      setIsResizingHorizontal(false);
+      setIsResizingVertical(false);
+    };
+
+    if (isResizingHorizontal || isResizingVertical) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = isResizingHorizontal ? 'col-resize' : 'row-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingHorizontal, isResizingVertical]);
 
   const fetchProblems = async () => {
     try {
       const data = await codingService.getCodingProblemsByContest(contestId);
       setProblems(data.problems);
 
-      // Fetch contest info for timer
       if (data.contest) {
         setContestInfo(data.contest);
-
-        // Try to restore timer from localStorage first
-        const savedTime = localStorage.getItem(`timer_${contestId}`);
-        if (savedTime && !isNaN(parseInt(savedTime))) {
-          const timeValue = parseInt(savedTime);
-          if (timeValue > 0) {
-            setTimeRemaining(timeValue);
-          } else {
-            // Timer expired, use full duration
-            setTimeRemaining(data.contest.duration * 60);
-          }
-        } else if (data.contest.duration) {
-          // No saved time, use full duration
-          setTimeRemaining(data.contest.duration * 60);
-        }
       }
 
       setLoading(false);
@@ -192,7 +291,7 @@ const CodingSection = () => {
 
   const fetchSubmissions = async (problemId) => {
     try {
-      const data = await codingService.getSubmissions(problemId);
+      const data = await codingService.getSubmissions(problemId, contestId);
       setSubmissions(data.submissions);
     } catch (error) {
       console.error('Error fetching submissions:', error);
@@ -200,8 +299,19 @@ const CodingSection = () => {
   };
 
   const handleLanguageChange = (language) => {
+    const problemId = problems[currentProblem]?._id;
+
+    // Check if current code is empty or just template
+    const currentLang = selectedLanguage;
+    const isTemplateOrEmpty = !code.trim() || code.trim() === currentLang.template.trim();
+
     setSelectedLanguage(language);
-    setCode(language.template);
+
+    // Only reset code to template if code is empty/template
+    if (isTemplateOrEmpty) {
+      setCode(language.template);
+    }
+
     setOutput('');
     setTestResults(null);
   };
@@ -375,10 +485,11 @@ const CodingSection = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate(`/contest/${contestId}`)}
-              className="text-gray-400 hover:text-white"
+              onClick={() => navigate(`/contest/${contestId}/hub`)}
+              className="text-gray-400 hover:text-white flex items-center gap-2"
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ArrowLeft className="w-5 h-5" />
+              Back to Hub
             </button>
             <h1 className="text-lg font-bold">{problem.title}</h1>
             <span className={`badge-${problem.difficulty.toLowerCase()}`}>
@@ -388,13 +499,11 @@ const CodingSection = () => {
 
           <div className="flex items-center gap-4">
             {/* Timer Display */}
-            {timeRemaining !== null && (
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-lg font-semibold ${timeRemaining < 300 ? 'bg-red-500/20 text-red-500' : 'bg-dark-700 text-white'
-                }`}>
-                <Clock className="w-5 h-5" />
-                <span>{formatTime(timeRemaining)}</span>
-              </div>
-            )}
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-lg font-semibold ${remainingTime < 300 ? 'bg-red-500/20 text-red-500 animate-pulse' : 'bg-dark-700 text-white'
+              }`}>
+              <Clock className="w-5 h-5" />
+              <span>{formattedTime}</span>
+            </div>
 
             <div className="text-sm text-gray-400">
               Score: <span className="text-primary-400 font-semibold">{problem.score}</span>
@@ -444,7 +553,7 @@ const CodingSection = () => {
           {problems.map((p, index) => (
             <button
               key={p._id}
-              onClick={() => setCurrentProblem(index)}
+              onClick={() => handleProblemChange(index)}
               className={`px-3 py-1 rounded text-sm font-medium transition-colors ${index === currentProblem
                 ? 'bg-primary-500 text-white'
                 : 'bg-dark-700 text-gray-400 hover:bg-dark-600'
@@ -457,9 +566,10 @@ const CodingSection = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div ref={containerRef} className="flex-1 flex overflow-hidden">
         {/* Left Panel - Problem Description */}
-        <div className="w-1/2 border-r border-dark-700 flex flex-col">
+        <div style={{ width: `${leftPanelWidth}%` }} className="border-r border-dark-700 flex flex-col">
+
           {/* Tabs */}
           <div className="flex border-b border-dark-700 bg-dark-800">
             <button
@@ -485,7 +595,11 @@ const CodingSection = () => {
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div
+            className="flex-1 overflow-y-auto p-6 select-none"
+            onCopy={(e) => e.preventDefault()}
+            onContextMenu={(e) => e.preventDefault()}
+          >
             {activeTab === 'description' ? (
               <div className="space-y-6">
                 {/* Description */}
@@ -494,6 +608,18 @@ const CodingSection = () => {
                   <p className="text-gray-300 leading-relaxed whitespace-pre-wrap">
                     {problem.description}
                   </p>
+                  {/* Problem Image (if exists) */}
+                  {problem.imageUrl && (
+                    <div className="mt-4">
+                      <img
+                        src={problem.imageUrl}
+                        alt="Problem"
+                        className="max-w-full max-h-80 rounded-lg border border-dark-600"
+                        onContextMenu={(e) => e.preventDefault()}
+                        draggable="false"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Input Format */}
@@ -613,68 +739,118 @@ const CodingSection = () => {
           </div>
         </div>
 
+        {/* Horizontal Resize Handle */}
+        <div
+          onMouseDown={handleHorizontalMouseDown}
+          className="w-1.5 bg-dark-700 hover:bg-primary-500 cursor-col-resize flex items-center justify-center group transition-colors"
+        >
+          <GripVertical className="w-3 h-3 text-gray-600 group-hover:text-white" />
+        </div>
+
         {/* Right Panel - Code Editor */}
-        <div className="w-1/2 flex flex-col">
-          {/* Editor */}
-          <div className="flex-1 overflow-hidden">
+        <div ref={rightPanelRef} className="flex-1 flex flex-col overflow-hidden">
+          {/* Editor - uses flex to fill remaining space */}
+          <div
+            className="overflow-hidden transition-none"
+            style={{
+              flex: isIoMinimized ? '1 1 100%' : '1 1 auto',
+              minHeight: '200px'
+            }}
+          >
             <Editor
               height="100%"
               language={selectedLanguage.monaco}
               value={code}
               onChange={(value) => setCode(value)}
               theme="vs-dark"
+              onMount={(editor, monaco) => {
+                // Disable paste by intercepting Ctrl+V / Cmd+V
+                editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV, () => {
+                  toast.error('Pasting is disabled during the contest');
+                });
+                // Also disable context menu paste
+                editor.onContextMenu((e) => {
+                  e.event.preventDefault();
+                });
+              }}
               options={{
                 fontSize: 14,
                 minimap: { enabled: false },
                 scrollBeyondLastLine: false,
                 wordWrap: 'on',
                 automaticLayout: true,
+                contextmenu: false, // Disable right-click menu
               }}
             />
           </div>
 
+          {/* Vertical Resize Handle */}
+          {!isIoMinimized && (
+            <div
+              onMouseDown={handleVerticalMouseDown}
+              className="h-1.5 bg-dark-700 hover:bg-primary-500 cursor-row-resize flex items-center justify-center group transition-colors"
+            >
+              <GripHorizontal className="w-3 h-3 text-gray-600 group-hover:text-white" />
+            </div>
+          )}
+
           {/* Custom Input & Output */}
-          <div className="h-64 border-t border-dark-700 flex flex-col bg-dark-800">
-            <div className="flex border-b border-dark-700">
-              <div className="flex-1 px-4 py-2 text-sm font-medium text-gray-400">Custom Input</div>
-              <div className="flex-1 px-4 py-2 text-sm font-medium text-gray-400 border-l border-dark-700">Output</div>
+          <div
+            style={{
+              height: isIoMinimized ? '40px' : `${ioHeight}px`,
+              flexShrink: 0
+            }}
+            className="border-t border-dark-700 flex flex-col bg-dark-800"
+          >
+            <div className="flex border-b border-dark-700 items-center h-10 flex-shrink-0">
+              <div className="w-1/2 px-4 py-2 text-sm font-medium text-gray-400">Custom Input</div>
+              <div className="w-1/2 px-4 py-2 text-sm font-medium text-gray-400 border-l border-dark-700">Output</div>
+              <button
+                onClick={() => setIsIoMinimized(!isIoMinimized)}
+                className="px-3 py-2 text-gray-400 hover:text-white hover:bg-dark-700 transition-colors flex-shrink-0"
+                title={isIoMinimized ? 'Expand' : 'Minimize'}
+              >
+                {isIoMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+              </button>
             </div>
-            <div className="flex-1 flex overflow-hidden">
-              <textarea
-                value={customInput}
-                onChange={(e) => setCustomInput(e.target.value)}
-                placeholder="Enter custom input (optional)..."
-                className="flex-1 bg-dark-900 text-gray-300 p-4 font-mono text-sm resize-none focus:outline-none"
-              />
-              <div className="flex-1 border-l border-dark-700 bg-dark-900 p-4 font-mono text-sm overflow-auto">
-                {testResults ? (
-                  <div className="space-y-2">
-                    <div className={`font-semibold ${testResults.verdict === 'ACCEPTED' ? 'text-green-400' : 'text-red-400'
-                      }`}>
-                      {testResults.verdict.replace(/_/g, ' ')}
-                    </div>
-                    <div className="text-gray-400 text-xs">
-                      Testcases Passed: {testResults.testcasesPassed}/{testResults.totalTestcases}
-                    </div>
-                    <div className="text-gray-400 text-xs">
-                      Score: {testResults.score}/{problem.score}
-                    </div>
-                    {testResults.executionTime && (
-                      <div className="text-gray-400 text-xs">
-                        Execution Time: {testResults.executionTime}ms
+            {!isIoMinimized && (
+              <div className="flex-1 flex overflow-hidden">
+                <textarea
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  placeholder="Enter custom input (optional)..."
+                  className="w-1/2 bg-dark-900 text-gray-300 p-4 font-mono text-sm resize-none focus:outline-none"
+                />
+                <div className="w-1/2 border-l border-dark-700 bg-dark-900 p-4 font-mono text-sm overflow-auto">
+                  {testResults ? (
+                    <div className="space-y-2">
+                      <div className={`font-semibold ${testResults.verdict === 'ACCEPTED' ? 'text-green-400' : 'text-red-400'
+                        }`}>
+                        {testResults.verdict.replace(/_/g, ' ')}
                       </div>
-                    )}
-                    {testResults.errorMessage && (
-                      <pre className="text-red-400 text-xs mt-2 whitespace-pre-wrap">
-                        {testResults.errorMessage}
-                      </pre>
-                    )}
-                  </div>
-                ) : (
-                  <pre className="text-gray-300 whitespace-pre-wrap">{output || 'Output will appear here...'}</pre>
-                )}
+                      <div className="text-gray-400 text-xs">
+                        Testcases Passed: {testResults.testcasesPassed}/{testResults.totalTestcases}
+                      </div>
+                      <div className="text-gray-400 text-xs">
+                        Score: {testResults.score}/{problem.score}
+                      </div>
+                      {testResults.executionTime && (
+                        <div className="text-gray-400 text-xs">
+                          Execution Time: {testResults.executionTime}ms
+                        </div>
+                      )}
+                      {testResults.errorMessage && (
+                        <pre className="text-red-400 text-xs mt-2 whitespace-pre-wrap">
+                          {testResults.errorMessage}
+                        </pre>
+                      )}
+                    </div>
+                  ) : (
+                    <pre className="text-gray-300 whitespace-pre-wrap">{output || 'Output will appear here...'}</pre>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

@@ -37,3 +37,6 @@ export const DEFAULT_CODE = {
   python: '# Your code here\n\ndef main():\n    pass\n\nif __name__ == "__main__":\n    main()',
   javascript: '// Your code here\n\nfunction main() {\n    \n}\n\nmain();'
 };
+
+// Google OAuth Client ID
+export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '11805022042-e14oogg7ujmehlilleh5if8ijf6ue3qm.apps.googleusercontent.com';

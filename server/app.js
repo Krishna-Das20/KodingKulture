@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import mongoSanitize from 'express-mongo-sanitize';
+import hpp from 'hpp';
 import dotenv from 'dotenv';
 
 // Import routes
@@ -11,43 +12,93 @@ import mcqRoutes from './routes/mcq.routes.js';
 import codingRoutes from './routes/coding.routes.js';
 import submissionRoutes from './routes/submission.routes.js';
 import leaderboardRoutes from './routes/leaderboard.routes.js';
+import uploadRoutes from './routes/upload.routes.js';
 
 // Import middleware
 import { errorHandler } from './middlewares/error.middleware.js';
+import { apiLimiter, speedLimiter } from './middlewares/security.middleware.js';
 
 dotenv.config();
 
 const app = express();
 
-// Security middleware
-app.use(helmet());
+// ===========================================
+// SECURITY MIDDLEWARE (Order Matters!)
+// ===========================================
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
-});
-app.use('/api', limiter);
-
-// CORS
-app.use(cors({
+// 1. CORS - must be before other middleware
+const corsOptions = {
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 86400 // 24 hours - reduce preflight requests
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// 2. Helmet - Security headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:", "blob:"],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'", process.env.CLIENT_URL || 'http://localhost:5173'],
+      frameSrc: ["'none'"],
+      objectSrc: ["'none'"]
+    }
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
 }));
 
-// Body parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 3. Body parser with size limits
+app.use(express.json({ limit: '10kb' })); // Limit body size to 10kb
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// API Routes
+// 4. Data sanitization against NoSQL injection
+app.use(mongoSanitize({
+  replaceWith: '_',
+  onSanitize: ({ req, key }) => {
+    console.warn(`[SECURITY] Sanitized field: ${key} from ${req.ip}`);
+  }
+}));
+
+// 5. Prevent HTTP Parameter Pollution
+app.use(hpp({
+  whitelist: ['status', 'difficulty', 'category', 'page', 'limit', 'sort']
+}));
+
+// 6. Global rate limiting + speed limiter
+app.use('/api', apiLimiter);
+app.use('/api', speedLimiter);
+
+// ===========================================
+// API ROUTES
+// ===========================================
+
 app.use('/api/auth', authRoutes);
 app.use('/api/contests', contestRoutes);
 app.use('/api/mcq', mcqRoutes);
 app.use('/api/coding', codingRoutes);
 app.use('/api/submissions', submissionRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/upload', uploadRoutes);
 
-// Health check
+// ===========================================
+// UTILITY ROUTES
+// ===========================================
+
+// Health check (no rate limit)
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,

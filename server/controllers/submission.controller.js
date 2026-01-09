@@ -339,10 +339,17 @@ export const submitCode = async (req, res) => {
 // @access  Private
 export const getSubmissionsByProblem = async (req, res) => {
   try {
-    const submissions = await Submission.find({
+    const filter = {
       userId: req.user._id,
       problemId: req.params.problemId
-    }).sort({ submittedAt: -1 });
+    };
+
+    // If contestId is provided, filter by it to avoid cross-contest submission display
+    if (req.query.contestId) {
+      filter.contestId = req.query.contestId;
+    }
+
+    const submissions = await Submission.find(filter).sort({ submittedAt: -1 });
 
     res.status(200).json({
       success: true,

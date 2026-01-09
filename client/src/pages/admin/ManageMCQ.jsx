@@ -3,8 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import adminService from '../../services/adminService';
 import mcqService from '../../services/mcqService';
+import api from '../../services/authService';
 import toast from 'react-hot-toast';
-import { Save, X, Plus, Trash2, CheckCircle, Edit, ArrowLeft } from 'lucide-react';
+import ImageUpload from '../../components/common/ImageUpload';
+import { Save, X, Plus, Trash2, CheckCircle, Edit, ArrowLeft, Library, Search } from 'lucide-react';
+
+const MCQ_CATEGORIES = ['GENERAL', 'APTITUDE', 'TECHNICAL', 'REASONING', 'ENTREPRENEURSHIP'];
 
 const ManageMCQ = () => {
   const { contestId } = useParams();
@@ -14,8 +18,15 @@ const ManageMCQ = () => {
   const [mcqs, setMcqs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
   const [editingMcq, setEditingMcq] = useState(null);
-  
+
+  // Library state
+  const [libraryMcqs, setLibraryMcqs] = useState([]);
+  const [selectedLibraryMcqs, setSelectedLibraryMcqs] = useState([]);
+  const [libraryFilter, setLibraryFilter] = useState({ category: '', search: '' });
+  const [libraryLoading, setLibraryLoading] = useState(false);
+
   const [formData, setFormData] = useState({
     contestId: contestId,
     question: '',
@@ -29,7 +40,9 @@ const ManageMCQ = () => {
     negativeMarks: 1,
     difficulty: 'MEDIUM',
     category: 'GENERAL',
-    order: 1
+    order: 1,
+    imageUrl: null,
+    imagePublicId: null
   });
 
   useEffect(() => {
@@ -53,6 +66,55 @@ const ManageMCQ = () => {
     }
   };
 
+  const fetchLibraryMcqs = async () => {
+    setLibraryLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (libraryFilter.category) params.append('category', libraryFilter.category);
+      if (libraryFilter.search) params.append('search', libraryFilter.search);
+
+      const response = await api.get(`/mcq/library?${params}`);
+      setLibraryMcqs(response.data.mcqs);
+    } catch (error) {
+      toast.error('Failed to load library');
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showLibrary) {
+      fetchLibraryMcqs();
+    }
+  }, [showLibrary, libraryFilter]);
+
+  const handleAddFromLibrary = async () => {
+    if (selectedLibraryMcqs.length === 0) {
+      toast.error('Select at least one MCQ');
+      return;
+    }
+
+    try {
+      await api.post(`/mcq/contest/${contestId}/add-from-library`, {
+        mcqIds: selectedLibraryMcqs
+      });
+      toast.success(`${selectedLibraryMcqs.length} MCQs added to contest`);
+      setShowLibrary(false);
+      setSelectedLibraryMcqs([]);
+      fetchMCQs();
+    } catch (error) {
+      toast.error('Failed to add MCQs');
+    }
+  };
+
+  const toggleLibrarySelection = (mcqId) => {
+    setSelectedLibraryMcqs(prev =>
+      prev.includes(mcqId)
+        ? prev.filter(id => id !== mcqId)
+        : [...prev, mcqId]
+    );
+  };
+
   const resetForm = () => {
     setFormData({
       contestId: contestId,
@@ -67,7 +129,9 @@ const ManageMCQ = () => {
       negativeMarks: 1,
       difficulty: 'MEDIUM',
       category: 'GENERAL',
-      order: mcqs.length + 1
+      order: mcqs.length + 1,
+      imageUrl: null,
+      imagePublicId: null
     });
     setEditingMcq(null);
     setShowForm(false);
@@ -82,29 +146,39 @@ const ManageMCQ = () => {
       negativeMarks: mcq.negativeMarks,
       difficulty: mcq.difficulty,
       category: mcq.category,
-      order: mcq.order
+      order: mcq.order,
+      imageUrl: mcq.imageUrl || null,
+      imagePublicId: mcq.imagePublicId || null
     });
     setEditingMcq(mcq);
     setShowForm(true);
   };
 
-  const handleDelete = async (mcqId) => {
-    if (!window.confirm('Are you sure you want to delete this MCQ?')) return;
+  const handleDelete = async (mcq) => {
+    // Check if this is a library MCQ linked to contest (has contestMCQId)
+    const isLibraryLinked = !!mcq.contestMCQId;
 
     try {
-      await adminService.deleteMCQ(mcqId);
-      toast.success('MCQ deleted successfully');
+      if (isLibraryLinked) {
+        // Only remove from contest, keep in library
+        await adminService.removeMCQFromContest(contestId, mcq._id);
+        toast.success('MCQ removed from contest');
+      } else {
+        // Delete entirely (was created in this contest directly)
+        await adminService.deleteMCQ(mcq._id);
+        toast.success('MCQ deleted successfully');
+      }
       fetchMCQs();
     } catch (error) {
-      console.error('Error deleting MCQ:', error);
-      toast.error('Failed to delete MCQ');
+      console.error('Error removing MCQ:', error);
+      toast.error('Failed to remove MCQ');
     }
   };
 
   const handleOptionChange = (index, field, value) => {
     setFormData(prev => ({
       ...prev,
-      options: prev.options.map((opt, i) => 
+      options: prev.options.map((opt, i) =>
         i === index ? { ...opt, [field]: value } : opt
       )
     }));
@@ -131,7 +205,6 @@ const ManageMCQ = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validation
     if (!formData.question.trim()) {
       toast.error('Question is required');
       return;
@@ -152,7 +225,9 @@ const ManageMCQ = () => {
     try {
       const mcqData = {
         ...formData,
-        options: formData.options.filter(opt => opt.text.trim())
+        options: formData.options.filter(opt => opt.text.trim()),
+        imageUrl: formData.imageUrl,
+        imagePublicId: formData.imagePublicId
       };
 
       if (editingMcq) {
@@ -193,26 +268,35 @@ const ManageMCQ = () => {
             </button>
             <div>
               <h1 className="text-3xl font-bold mb-2">Manage MCQs</h1>
-              <p className="text-gray-400">{mcqs.length} questions created</p>
+              <p className="text-gray-400">{mcqs.length} questions in contest</p>
             </div>
           </div>
-          
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="btn-primary"
-          >
-            {showForm ? (
-              <>
-                <X className="w-5 h-5 mr-2" />
-                Cancel
-              </>
-            ) : (
-              <>
-                <Plus className="w-5 h-5 mr-2" />
-                Add MCQ
-              </>
-            )}
-          </button>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowLibrary(true)}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Library className="w-5 h-5" />
+              Add from Library
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="btn-primary"
+            >
+              {showForm ? (
+                <>
+                  <X className="w-5 h-5 mr-2" />
+                  Cancel
+                </>
+              ) : (
+                <>
+                  <Plus className="w-5 h-5 mr-2" />
+                  Create New
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* MCQ Form */}
@@ -221,7 +305,7 @@ const ManageMCQ = () => {
             <h2 className="text-xl font-bold mb-6">
               {editingMcq ? 'Edit MCQ' : 'Create New MCQ'}
             </h2>
-            
+
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Question */}
               <div>
@@ -252,7 +336,7 @@ const ManageMCQ = () => {
                     + Add Option
                   </button>
                 </div>
-                
+
                 <div className="space-y-3">
                   {formData.options.map((option, index) => (
                     <div key={index} className="flex gap-3 items-start">
@@ -264,7 +348,7 @@ const ManageMCQ = () => {
                           className="w-5 h-5 rounded border-gray-600 text-green-500 focus:ring-green-500"
                         />
                       </div>
-                      
+
                       <input
                         type="text"
                         value={option.text}
@@ -272,7 +356,7 @@ const ManageMCQ = () => {
                         className="input-field flex-1"
                         placeholder={`Option ${String.fromCharCode(65 + index)}`}
                       />
-                      
+
                       {formData.options.length > 2 && (
                         <button
                           type="button"
@@ -342,13 +426,19 @@ const ManageMCQ = () => {
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                     className="input-field"
                   >
-                    <option value="GENERAL">General</option>
-                    <option value="TECHNICAL">Technical</option>
-                    <option value="APTITUDE">Aptitude</option>
-                    <option value="REASONING">Reasoning</option>
+                    {MCQ_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
                   </select>
                 </div>
               </div>
+
+              {/* Image Upload */}
+              <ImageUpload
+                imageUrl={formData.imageUrl}
+                onImageChange={(url, publicId) => setFormData({ ...formData, imageUrl: url, imagePublicId: publicId })}
+                onImageRemove={() => setFormData({ ...formData, imageUrl: null, imagePublicId: null })}
+              />
 
               {/* Submit */}
               <div className="flex justify-end gap-4 pt-4 border-t border-dark-700">
@@ -371,16 +461,25 @@ const ManageMCQ = () => {
         {/* MCQ List */}
         <div className="card">
           <h2 className="text-xl font-bold mb-6">All MCQs</h2>
-          
+
           {mcqs.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-400 mb-4">No MCQs created yet</p>
-              <button
-                onClick={() => setShowForm(true)}
-                className="btn-primary"
-              >
-                Create First MCQ
-              </button>
+              <p className="text-gray-400 mb-4">No MCQs in this contest yet</p>
+              <div className="flex justify-center gap-3">
+                <button
+                  onClick={() => setShowLibrary(true)}
+                  className="btn-secondary"
+                >
+                  <Library className="w-5 h-5 mr-2" />
+                  Add from Library
+                </button>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="btn-primary"
+                >
+                  Create New MCQ
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -394,10 +493,15 @@ const ManageMCQ = () => {
                           {mcq.difficulty}
                         </span>
                         <span className="badge-info text-xs">{mcq.category}</span>
+                        {mcq.isLibrary && (
+                          <span className="text-xs text-purple-400 flex items-center gap-1">
+                            <Library className="w-3 h-3" /> From Library
+                          </span>
+                        )}
                       </div>
                       <p className="text-lg text-gray-200 mb-3">{mcq.question}</p>
                     </div>
-                    
+
                     <div className="flex gap-2 ml-4">
                       <button
                         onClick={() => handleEdit(mcq)}
@@ -406,7 +510,7 @@ const ManageMCQ = () => {
                         <Edit className="w-4 h-4 text-blue-400" />
                       </button>
                       <button
-                        onClick={() => handleDelete(mcq._id)}
+                        onClick={() => handleDelete(mcq)}
                         className="p-2 hover:bg-dark-600 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4 text-red-400" />
@@ -419,9 +523,8 @@ const ManageMCQ = () => {
                     {mcq.options.map((option, optIndex) => (
                       <div
                         key={optIndex}
-                        className={`flex items-start gap-3 p-2 rounded ${
-                          option.isCorrect ? 'bg-green-500/10 border border-green-500/30' : ''
-                        }`}
+                        className={`flex items-start gap-3 p-2 rounded ${option.isCorrect ? 'bg-green-500/10 border border-green-500/30' : ''
+                          }`}
                       >
                         {option.isCorrect && (
                           <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
@@ -442,7 +545,6 @@ const ManageMCQ = () => {
                     {mcq.negativeMarks > 0 && (
                       <span>Negative: <span className="text-red-400 font-semibold">-{mcq.negativeMarks}</span></span>
                     )}
-                    <span>Order: {mcq.order}</span>
                   </div>
                 </div>
               ))}
@@ -450,8 +552,108 @@ const ManageMCQ = () => {
           )}
         </div>
       </div>
+
+      {/* Library Modal */}
+      {showLibrary && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 rounded-xl max-w-4xl w-full max-h-[85vh] flex flex-col">
+            <div className="p-6 border-b border-dark-700 flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold">Select from MCQ Library</h2>
+                <p className="text-gray-400 text-sm">{selectedLibraryMcqs.length} selected</p>
+              </div>
+              <button onClick={() => { setShowLibrary(false); setSelectedLibraryMcqs([]); }}>
+                <X className="w-6 h-6 text-gray-400 hover:text-white" />
+              </button>
+            </div>
+
+            {/* Filters */}
+            <div className="p-4 border-b border-dark-700 flex gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search questions..."
+                  value={libraryFilter.search}
+                  onChange={(e) => setLibraryFilter({ ...libraryFilter, search: e.target.value })}
+                  className="input pl-10 w-full"
+                />
+              </div>
+              <select
+                value={libraryFilter.category}
+                onChange={(e) => setLibraryFilter({ ...libraryFilter, category: e.target.value })}
+                className="input w-48"
+              >
+                <option value="">All Categories</option>
+                {MCQ_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* MCQ List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {libraryLoading ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
+                </div>
+              ) : libraryMcqs.length === 0 ? (
+                <p className="text-center text-gray-400 py-8">No MCQs in library</p>
+              ) : (
+                libraryMcqs.map(mcq => (
+                  <div
+                    key={mcq._id}
+                    onClick={() => toggleLibrarySelection(mcq._id)}
+                    className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedLibraryMcqs.includes(mcq._id)
+                      ? 'border-primary-500 bg-primary-500/10'
+                      : 'border-dark-600 hover:border-dark-500'
+                      }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedLibraryMcqs.includes(mcq._id)}
+                        onChange={() => { }}
+                        className="w-5 h-5 mt-1 rounded"
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="badge-info text-xs">{mcq.category}</span>
+                          <span className={`badge-${mcq.difficulty.toLowerCase()} text-xs`}>
+                            {mcq.difficulty}
+                          </span>
+                          <span className="text-gray-500 text-xs">{mcq.marks} marks</span>
+                        </div>
+                        <p className="text-gray-200">{mcq.question}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-dark-700 flex justify-end gap-3">
+              <button
+                onClick={() => { setShowLibrary(false); setSelectedLibraryMcqs([]); }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddFromLibrary}
+                disabled={selectedLibraryMcqs.length === 0}
+                className="btn-primary disabled:opacity-50"
+              >
+                Add {selectedLibraryMcqs.length} MCQs
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default ManageMCQ;
+
