@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ContestTimerProvider } from './context/ContestTimerContext';
+import api from './services/authService';
 import Navbar from './components/common/Navbar';
 import Footer from './components/common/Footer';
 import Home from './pages/Home';
@@ -103,8 +104,32 @@ const ProctoredContest = ({ children }) => {
   const { contestId } = useParams();
   const navigate = useNavigate();
 
-  const handleAutoSubmit = (reason) => {
-    // Navigate to results after malpractice auto-submit
+  const handleAutoSubmit = async (reason) => {
+    try {
+      // Read MCQ answers from localStorage
+      const mcqAnswers = JSON.parse(localStorage.getItem(`mcq_answers_${contestId}`) || '{}');
+      const formattedAnswers = Object.entries(mcqAnswers).map(([mcqId, selectedOptions]) => ({
+        mcqId,
+        selectedOptions
+      }));
+
+      // Submit answers to backend before navigating
+      await api.post(`/contests/${contestId}/submit`, {
+        mcqAnswers: formattedAnswers
+      });
+
+      // Clear localStorage for this contest
+      Object.keys(localStorage).forEach(key => {
+        if (key.includes(contestId)) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (error) {
+      console.error('Auto-submit error:', error);
+      // Continue navigation even if submit fails (backend already marked as terminated)
+    }
+
+    // Navigate to review page
     setTimeout(() => {
       navigate(`/contest/${contestId}/review`);
     }, 2000);
