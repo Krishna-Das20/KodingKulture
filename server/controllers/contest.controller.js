@@ -622,6 +622,98 @@ export const trackTime = async (req, res) => {
   }
 };
 
+// @desc    Save MCQ progress (periodic auto-save)
+// @route   POST /api/contests/:id/save-progress
+// @access  Private
+export const saveProgress = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user._id;
+    const { mcqAnswers } = req.body;
+
+    const ContestProgress = (await import('../models/ContestProgress.js')).default;
+
+    const progress = await ContestProgress.findOne({ contestId: id, userId });
+
+    if (!progress) {
+      return res.status(400).json({
+        success: false,
+        message: 'Contest not started'
+      });
+    }
+
+    if (progress.status === 'SUBMITTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Contest already submitted'
+      });
+    }
+
+    // Save MCQ answers to progress
+    if (mcqAnswers && mcqAnswers.length > 0) {
+      progress.mcqProgress.answers = mcqAnswers;
+    }
+
+    await progress.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Progress saved'
+    });
+  } catch (error) {
+    console.error('Save progress error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error saving progress'
+    });
+  }
+};
+
+// @desc    Emergency save MCQ progress (for browser close - accepts token in body)
+// @route   POST /api/contests/:id/emergency-save
+// @access  Special (token in body, not header)
+export const emergencySave = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { mcqAnswers, token } = req.body;
+
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+
+    // Verify token manually
+    const jwt = (await import('jsonwebtoken')).default;
+    const User = (await import('../models/User.js')).default;
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
+
+    const userId = decoded.id;
+    const ContestProgress = (await import('../models/ContestProgress.js')).default;
+
+    const progress = await ContestProgress.findOne({ contestId: id, userId });
+
+    if (!progress || progress.status === 'SUBMITTED') {
+      return res.status(200).json({ success: true, message: 'No save needed' });
+    }
+
+    // Save MCQ answers
+    if (mcqAnswers && mcqAnswers.length > 0) {
+      progress.mcqProgress.answers = mcqAnswers;
+      await progress.save();
+    }
+
+    res.status(200).json({ success: true, message: 'Emergency save successful' });
+  } catch (error) {
+    console.error('Emergency save error:', error);
+    res.status(500).json({ success: false, message: 'Emergency save failed' });
+  }
+};
+
 // @desc    Log proctoring violation
 // @route   POST /api/contests/:id/violation
 // @access  Private

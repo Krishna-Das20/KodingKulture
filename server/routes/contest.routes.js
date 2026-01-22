@@ -11,6 +11,8 @@ import {
   getContestProgress,
   finalSubmitContest,
   trackTime,
+  saveProgress,
+  emergencySave,
   logViolation,
   getContestViolations,
   getRegistrationStatus,
@@ -40,6 +42,8 @@ router.post('/:id/start', protect, startContest);
 router.get('/:id/progress', protect, getContestProgress);
 router.post('/:id/submit', protect, finalSubmitContest);
 router.post('/:id/track-time', protect, trackTime);
+router.post('/:id/save-progress', protect, saveProgress);
+router.post('/:id/emergency-save', emergencySave); // No protect - authenticates via body token
 
 // Proctoring routes
 router.post('/:id/violation', protect, logViolation);

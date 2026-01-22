@@ -55,6 +55,57 @@ const MCQSection = () => {
     }
   }, [answers, contestId]);
 
+  // Periodic auto-save to backend every 30 seconds
+  useEffect(() => {
+    const autoSaveInterval = setInterval(async () => {
+      if (Object.keys(answers).length > 0) {
+        try {
+          const formattedAnswers = Object.keys(answers).map(mcqId => ({
+            mcqId,
+            selectedOptions: answers[mcqId]
+          }));
+
+          await api.post(`/contests/${contestId}/save-progress`, {
+            mcqAnswers: formattedAnswers
+          });
+          console.log('MCQ answers auto-saved to backend');
+        } catch (error) {
+          console.error('Auto-save failed:', error);
+        }
+      }
+    }, 30000); // Every 30 seconds
+
+    return () => clearInterval(autoSaveInterval);
+  }, [answers, contestId]);
+
+  // Emergency save when browser is closing (using sendBeacon for reliability)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (Object.keys(answers).length > 0) {
+        const formattedAnswers = Object.keys(answers).map(mcqId => ({
+          mcqId,
+          selectedOptions: answers[mcqId]
+        }));
+
+        const token = localStorage.getItem('token');
+        const data = JSON.stringify({
+          mcqAnswers: formattedAnswers,
+          token // Include token for authentication
+        });
+
+        // sendBeacon is more reliable than fetch for unload events
+        navigator.sendBeacon(
+          `${import.meta.env.VITE_API_URL}/contests/${contestId}/emergency-save`,
+          new Blob([data], { type: 'application/json' })
+        );
+        console.log('Emergency MCQ save triggered');
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [answers, contestId]);
+
   // Track time when changing questions
   const trackQuestionTime = async (questionId, timeSpent) => {
     try {
