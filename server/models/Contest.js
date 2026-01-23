@@ -38,6 +38,10 @@ const contestSchema = new mongoose.Schema({
       totalMarks: {
         type: Number,
         default: 0
+      },
+      proctored: {
+        type: Boolean,
+        default: true
       }
     },
     coding: {
@@ -52,6 +56,10 @@ const contestSchema = new mongoose.Schema({
       totalMarks: {
         type: Number,
         default: 0
+      },
+      proctored: {
+        type: Boolean,
+        default: true
       }
     },
     forms: {
@@ -62,6 +70,10 @@ const contestSchema = new mongoose.Schema({
       totalMarks: {
         type: Number,
         default: 0
+      },
+      proctored: {
+        type: Boolean,
+        default: false // Forms typically don't need proctoring (e.g., PPT submission)
       }
     }
   },

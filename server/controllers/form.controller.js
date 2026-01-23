@@ -92,13 +92,16 @@ export const getFormsByContest = async (req, res) => {
         const forms = await Form.find({ contestId, isActive: true }).sort({ createdAt: 1 });
 
         // For participants, hide correct answers
-        const sanitizedForms = isAdminOrCreator ? forms : forms.map(form => ({
-            ...form.toObject(),
-            fields: form.fields.map(field => {
-                const { correctAnswers, ...rest } = field;
-                return rest;
-            })
-        }));
+        const sanitizedForms = isAdminOrCreator ? forms : forms.map(form => {
+            const formObj = form.toObject();
+            return {
+                ...formObj,
+                fields: formObj.fields.map(field => {
+                    const { correctAnswers, ...rest } = field;
+                    return rest;
+                })
+            };
+        });
 
         res.status(200).json({
             success: true,

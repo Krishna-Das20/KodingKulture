@@ -184,8 +184,8 @@ const FormEvaluation = () => {
                                 <div
                                     key={submission._id}
                                     className={`flex items-center justify-between p-4 rounded-lg cursor-pointer transition-colors ${selectedSubmission?._id === submission._id
-                                            ? 'bg-primary-500/20 border border-primary-500'
-                                            : 'bg-dark-700 hover:bg-dark-600'
+                                        ? 'bg-primary-500/20 border border-primary-500'
+                                        : 'bg-dark-700 hover:bg-dark-600'
                                         }`}
                                     onClick={() => openSubmission(submission)}
                                 >
@@ -206,8 +206,8 @@ const FormEvaluation = () => {
                                             </div>
                                         </div>
                                         <div className={`px-3 py-1 rounded-full text-xs font-medium ${submission.isFullyEvaluated
-                                                ? 'bg-green-500/20 text-green-400'
-                                                : 'bg-yellow-500/20 text-yellow-400'
+                                            ? 'bg-green-500/20 text-green-400'
+                                            : 'bg-yellow-500/20 text-yellow-400'
                                             }`}>
                                             {submission.isFullyEvaluated ? 'Evaluated' : 'Pending'}
                                         </div>
@@ -223,70 +223,122 @@ const FormEvaluation = () => {
                     )}
                 </div>
 
-                {/* Evaluation Panel */}
+                {/* Evaluation Panel - Enhanced Side-by-Side View */}
                 {selectedSubmission && (
                     <div className="card mt-6">
-                        <h3 className="text-lg font-semibold text-white mb-4">
-                            Evaluate: {selectedSubmission.userId?.name}
-                        </h3>
-                        <div className="space-y-4">
-                            {selectedSubmission.responses.map((response) => (
-                                <div key={response.fieldId} className="p-4 bg-dark-700 rounded-lg">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="font-medium text-white">
-                                            {getFieldLabel(response.fieldId, selectedSubmission.formId)}
-                                        </span>
-                                        <span className="text-sm text-gray-400">
-                                            {response.isAutoScored ? 'Auto-scored' : 'Manual evaluation'}
-                                        </span>
-                                    </div>
-
-                                    {/* Response Value */}
-                                    <div className="mb-3 p-3 bg-dark-800 rounded text-gray-300">
-                                        {Array.isArray(response.value)
-                                            ? response.value.join(', ')
-                                            : response.value || <em className="text-gray-500">No response</em>}
-                                    </div>
-
-                                    {/* Scoring */}
-                                    <div className="flex items-center gap-4">
-                                        {response.isAutoScored ? (
-                                            <div className="text-green-400">
-                                                Score: {response.autoScore} / {response.maxMarks}
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-gray-400">Score:</span>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max={response.maxMarks}
-                                                        value={evaluations[response.fieldId]?.manualScore || 0}
-                                                        onChange={(e) => handleScoreChange(
-                                                            response.fieldId,
-                                                            parseInt(e.target.value) || 0,
-                                                            response.maxMarks
-                                                        )}
-                                                        className="w-20 input-field py-1"
-                                                    />
-                                                    <span className="text-gray-400">/ {response.maxMarks}</span>
-                                                </div>
-                                                <input
-                                                    type="text"
-                                                    value={evaluations[response.fieldId]?.feedback || ''}
-                                                    onChange={(e) => handleFeedbackChange(response.fieldId, e.target.value)}
-                                                    placeholder="Feedback (optional)"
-                                                    className="flex-1 input-field py-1"
-                                                />
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-semibold text-white">
+                                Evaluate: {selectedSubmission.userId?.name}
+                            </h3>
+                            <div className="flex items-center gap-4 text-sm">
+                                <span className="flex items-center gap-1 text-green-400">
+                                    <CheckCircle className="w-4 h-4" /> Auto-scored
+                                </span>
+                                <span className="flex items-center gap-1 text-yellow-400">
+                                    <Clock className="w-4 h-4" /> Manual evaluation
+                                </span>
+                            </div>
                         </div>
 
-                        <div className="flex justify-end gap-3 mt-6">
+                        <div className="space-y-4">
+                            {selectedSubmission.responses.map((response) => {
+                                const form = forms.find(f => f._id === selectedSubmission.formId._id || f._id === selectedSubmission.formId);
+                                const field = form?.fields?.find(f => f.fieldId === response.fieldId);
+                                const isAuto = response.isAutoScored;
+
+                                return (
+                                    <div
+                                        key={response.fieldId}
+                                        className={`p-5 rounded-lg border-l-4 ${isAuto
+                                                ? 'bg-green-500/5 border-green-500'
+                                                : 'bg-yellow-500/5 border-yellow-400'
+                                            }`}
+                                    >
+                                        {/* Side-by-side: Question | Answer */}
+                                        <div className="grid md:grid-cols-2 gap-6">
+                                            {/* Left: Question Details */}
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${isAuto ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+                                                        }`}>
+                                                        {field?.type || 'TEXT'}
+                                                    </span>
+                                                    <span className="text-sm text-gray-500">Max: {response.maxMarks} marks</span>
+                                                </div>
+                                                <h4 className="font-semibold text-white text-lg mb-2">
+                                                    {field?.label || 'Unknown Field'}
+                                                </h4>
+                                                {field?.placeholder && (
+                                                    <p className="text-gray-500 text-sm italic">Hint: {field.placeholder}</p>
+                                                )}
+                                                {(field?.type === 'RADIO' || field?.type === 'CHECKBOX') && field?.options?.length > 0 && (
+                                                    <div className="mt-2">
+                                                        <p className="text-gray-400 text-sm mb-1">Options:</p>
+                                                        <ul className="text-gray-500 text-sm pl-4 list-disc">
+                                                            {field.options.map((opt, i) => (
+                                                                <li key={i} className={field.correctAnswers?.includes(opt) ? 'text-green-400' : ''}>
+                                                                    {opt} {field.correctAnswers?.includes(opt) && '✓'}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Right: Participant Answer + Scoring */}
+                                            <div className="bg-dark-800 rounded-lg p-4">
+                                                <p className="text-gray-400 text-sm mb-2">Participant's Answer:</p>
+                                                <div className="mb-4 p-3 bg-dark-900 rounded text-gray-200 min-h-[60px]">
+                                                    {Array.isArray(response.value)
+                                                        ? response.value.join(', ')
+                                                        : response.value || <em className="text-gray-500">No response</em>}
+                                                </div>
+
+                                                {/* Scoring Section */}
+                                                <div className="border-t border-dark-700 pt-4">
+                                                    {isAuto ? (
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-gray-400">Auto Score:</span>
+                                                            <span className="text-green-400 font-bold text-lg">
+                                                                {response.autoScore} / {response.maxMarks}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="space-y-3">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-gray-400">Score:</span>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max={response.maxMarks}
+                                                                    value={evaluations[response.fieldId]?.manualScore || 0}
+                                                                    onChange={(e) => handleScoreChange(
+                                                                        response.fieldId,
+                                                                        parseInt(e.target.value) || 0,
+                                                                        response.maxMarks
+                                                                    )}
+                                                                    className="w-24 input-field py-2 text-center text-lg font-bold"
+                                                                />
+                                                                <span className="text-gray-400">/ {response.maxMarks}</span>
+                                                            </div>
+                                                            <input
+                                                                type="text"
+                                                                value={evaluations[response.fieldId]?.feedback || ''}
+                                                                onChange={(e) => handleFeedbackChange(response.fieldId, e.target.value)}
+                                                                placeholder="Add feedback for participant..."
+                                                                className="w-full input-field py-2 text-sm"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-dark-700">
                             <button
                                 onClick={() => setSelectedSubmission(null)}
                                 className="btn-secondary"

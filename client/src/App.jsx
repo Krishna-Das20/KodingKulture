@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams, useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ContestTimerProvider } from './context/ContestTimerContext';
@@ -123,10 +123,40 @@ const ContestWithTimer = ({ children }) => {
   );
 };
 
-// Proctored Contest Wrapper (for MCQ and Coding sections)
-const ProctoredContest = ({ children }) => {
+// Proctored Contest Wrapper (for MCQ, Coding, and Forms sections)
+const ProctoredContest = ({ children, sectionType = 'mcq' }) => {
   const { contestId } = useParams();
   const navigate = useNavigate();
+  const [proctorEnabled, setProctorEnabled] = useState(false); // Default to false to avoid forced proctoring on error
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkProctoring = async () => {
+      try {
+        const response = await api.get(`/contests/${contestId}`);
+        if (!mounted) return;
+
+        const contest = response.data.contest;
+        const isProctored = contest?.sections?.[sectionType]?.proctored ?? false;
+        setProctorEnabled(isProctored);
+        setError(null);
+      } catch (error) {
+        console.error('Error fetching contest:', error);
+        if (!mounted) return;
+        setProctorEnabled(false);
+        setError('Could not load contest settings');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    checkProctoring();
+
+    return () => { mounted = false; };
+  }, [contestId, sectionType]);
 
   const handleAutoSubmit = async (reason) => {
     try {
@@ -159,9 +189,20 @@ const ProctoredContest = ({ children }) => {
     }, 2000);
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-dark-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading section...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ContestTimerProvider contestId={contestId}>
-      <ProctorGuard contestId={contestId} onAutoSubmit={handleAutoSubmit} enabled={true}>
+      <ProctorGuard contestId={contestId} onAutoSubmit={handleAutoSubmit} enabled={proctorEnabled}>
         {children}
       </ProctorGuard>
     </ContestTimerProvider>
@@ -225,9 +266,9 @@ function App() {
             path="/contest/:contestId/hub"
             element={
               <ProtectedRoute>
-                <ProctoredContest>
+                <ContestWithTimer>
                   <ContestHub />
-                </ProctoredContest>
+                </ContestWithTimer>
               </ProtectedRoute>
             }
           />
@@ -236,7 +277,7 @@ function App() {
             path="/contest/:contestId/mcq"
             element={
               <ProtectedRoute>
-                <ProctoredContest>
+                <ProctoredContest sectionType="mcq">
                   <MCQSection />
                 </ProctoredContest>
               </ProtectedRoute>
@@ -247,7 +288,7 @@ function App() {
             path="/contest/:contestId/coding"
             element={
               <ProtectedRoute>
-                <ProctoredContest>
+                <ProctoredContest sectionType="coding">
                   <CodingSection />
                 </ProctoredContest>
               </ProtectedRoute>
@@ -258,7 +299,7 @@ function App() {
             path="/contest/:contestId/forms"
             element={
               <ProtectedRoute>
-                <ProctoredContest>
+                <ProctoredContest sectionType="forms">
                   <FormSection />
                 </ProctoredContest>
               </ProtectedRoute>

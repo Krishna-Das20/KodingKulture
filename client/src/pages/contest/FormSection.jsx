@@ -22,6 +22,7 @@ const FormSection = () => {
     const [submitting, setSubmitting] = useState(false);
     const [submittedForms, setSubmittedForms] = useState([]);
     const [mySubmissions, setMySubmissions] = useState([]);
+    const [formStartTimes, setFormStartTimes] = useState({}); // Track when each form was started
 
     useEffect(() => {
         fetchForms();
@@ -50,7 +51,26 @@ const FormSection = () => {
         }
     };
 
+    // Start tracking time when form changes or when first interacting
+    const startTrackingForm = (formId) => {
+        if (!formStartTimes[formId]) {
+            setFormStartTimes(prev => ({
+                ...prev,
+                [formId]: Date.now()
+            }));
+        }
+    };
+
+    // Calculate time spent on a form in seconds
+    const getTimeSpent = (formId) => {
+        const startTime = formStartTimes[formId];
+        if (!startTime) return 0;
+        return Math.floor((Date.now() - startTime) / 1000);
+    };
+
     const handleInputChange = (formId, fieldId, value) => {
+        // Start tracking time when user starts filling the form
+        startTrackingForm(formId);
         setResponses(prev => ({
             ...prev,
             [formId]: {
@@ -96,7 +116,8 @@ const FormSection = () => {
             await api.post('/form-submissions', {
                 formId: form._id,
                 contestId,
-                responses: responseArray
+                responses: responseArray,
+                timeTaken: getTimeSpent(form._id)
             });
 
             toast.success('Form submitted successfully!');
@@ -169,10 +190,10 @@ const FormSection = () => {
                                 key={form._id}
                                 onClick={() => setCurrentFormIndex(idx)}
                                 className={`px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${idx === currentFormIndex
-                                        ? 'bg-primary-500 text-white'
-                                        : submittedForms.includes(form._id)
-                                            ? 'bg-green-500/20 text-green-400 border border-green-500/50'
-                                            : 'bg-dark-700 text-gray-300 hover:bg-dark-600'
+                                    ? 'bg-primary-500 text-white'
+                                    : submittedForms.includes(form._id)
+                                        ? 'bg-green-500/20 text-green-400 border border-green-500/50'
+                                        : 'bg-dark-700 text-gray-300 hover:bg-dark-600'
                                     }`}
                             >
                                 {submittedForms.includes(form._id) && (

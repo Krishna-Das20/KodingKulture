@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Clock, Eye, Calendar, Users, FileQuestion, Code } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Eye, Calendar, Users, FileQuestion, Code, ClipboardList } from 'lucide-react';
 import api from '../../services/authService';
 import toast from 'react-hot-toast';
 import './VerifyContests.css';
@@ -36,16 +36,18 @@ const VerifyContests = () => {
         setShowDetailsModal(true);
 
         try {
-            // Fetch MCQs and Coding problems for this contest
-            const [mcqRes, codingRes] = await Promise.all([
+            // Fetch MCQs, Coding problems, and Forms for this contest
+            const [mcqRes, codingRes, formsRes] = await Promise.all([
                 api.get(`/mcq/contest/${contest._id}`),
-                api.get(`/coding/contest/${contest._id}`)
+                api.get(`/coding/contest/${contest._id}`),
+                api.get(`/forms/contest/${contest._id}`).catch(() => ({ data: { forms: [] } }))
             ]);
 
             setContestDetails({
                 contest,
                 mcqs: mcqRes.data.mcqs || [],
-                codingProblems: codingRes.data.problems || []
+                codingProblems: codingRes.data.problems || [],
+                forms: formsRes.data.forms || []
             });
         } catch (error) {
             toast.error('Failed to load contest details');
@@ -199,6 +201,13 @@ const VerifyContests = () => {
                                             <p>{contestDetails.codingProblems.length} problems</p>
                                         </div>
                                     </div>
+                                    <div className="summary-card">
+                                        <ClipboardList size={24} />
+                                        <div>
+                                            <h4>Forms</h4>
+                                            <p>{contestDetails.forms?.length || 0} forms</p>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {contestDetails.mcqs.length > 0 && (
@@ -229,9 +238,23 @@ const VerifyContests = () => {
                                     </div>
                                 )}
 
-                                {contestDetails.mcqs.length === 0 && contestDetails.codingProblems.length === 0 && (
+                                {contestDetails.forms?.length > 0 && (
+                                    <div className="questions-section">
+                                        <h4>Forms Preview</h4>
+                                        <ul className="questions-list">
+                                            {contestDetails.forms.map((form, idx) => (
+                                                <li key={form._id}>
+                                                    <span className="q-num">F{idx + 1}.</span> {form.title}
+                                                    <span className="q-meta">{form.fields?.length || 0} fields | {form.totalMarks || 0} marks</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {contestDetails.mcqs.length === 0 && contestDetails.codingProblems.length === 0 && (contestDetails.forms?.length || 0) === 0 && (
                                     <div className="no-questions-warning">
-                                        ⚠️ No questions added yet! Consider rejecting until questions are added.
+                                        ⚠️ No questions or forms added yet! Consider rejecting until content is added.
                                     </div>
                                 )}
 

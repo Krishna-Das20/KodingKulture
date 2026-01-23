@@ -18,7 +18,8 @@ import {
   UserCheck,
   Clock,
   ClipboardList,
-  StopCircle
+  StopCircle,
+  CheckSquare
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -104,6 +105,16 @@ const AdminDashboard = () => {
       default:
         return 'bg-gray-500/20 text-gray-400 border-gray-500/50';
     }
+  };
+
+  const getContestStatus = (contest) => {
+    const now = new Date();
+    const startTime = new Date(contest.startTime);
+    const endTime = new Date(contest.endTime);
+
+    if (now < startTime) return 'UPCOMING';
+    if (now >= startTime && now <= endTime) return 'LIVE';
+    return 'ENDED';
   };
 
   if (loading) {
@@ -328,6 +339,17 @@ const AdminDashboard = () => {
                             <BarChart3 className="w-4 h-4 text-green-400" />
                           </button>
 
+                          {/* End Contest button - only show for LIVE contests */}
+                          {getContestStatus(contest) === 'LIVE' && (
+                            <button
+                              onClick={() => handleEndContest(contest._id, contest.title)}
+                              className="p-2 hover:bg-red-600/20 rounded-lg transition-colors"
+                              title="End Contest Now"
+                            >
+                              <StopCircle className="w-4 h-4 text-red-400" />
+                            </button>
+                          )}
+
                           {/* MCQ button - only show if MCQ section is enabled */}
                           {contest.sections?.mcq?.enabled && (
                             <button
@@ -364,6 +386,17 @@ const AdminDashboard = () => {
                               disabled={!isAdmin && contest.verificationStatus === 'APPROVED'}
                             >
                               <ClipboardList className="w-4 h-4 text-cyan-400" />
+                            </button>
+                          )}
+
+                          {/* Evaluate Forms button - show if Forms enabled and contest has ended or is live */}
+                          {contest.sections?.forms?.enabled && (getContestStatus(contest) === 'LIVE' || getContestStatus(contest) === 'ENDED') && (
+                            <button
+                              onClick={() => navigate(`/admin/contest/evaluate/${contest._id}`)}
+                              className="p-2 hover:bg-dark-600 rounded-lg transition-colors"
+                              title="Evaluate Form Submissions"
+                            >
+                              <CheckSquare className="w-4 h-4 text-emerald-400" />
                             </button>
                           )}
 

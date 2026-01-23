@@ -22,15 +22,18 @@ const CreateContest = () => {
     sections: {
       mcq: {
         enabled: true,
-        totalMarks: 100
+        totalMarks: 100,
+        proctored: true
       },
       coding: {
         enabled: true,
-        totalMarks: 300
+        totalMarks: 300,
+        proctored: true
       },
       forms: {
         enabled: false,
-        totalMarks: 0
+        totalMarks: 0,
+        proctored: false
       }
     },
     rules: ['No cheating allowed', 'Complete all questions within time limit'],
@@ -71,7 +74,23 @@ const CreateContest = () => {
         endTime: formatDateTime(contest.endTime),
         duration: contest.duration,
         maxParticipants: contest.maxParticipants || '',
-        sections: contest.sections,
+        sections: {
+          mcq: {
+            enabled: contest.sections?.mcq?.enabled ?? false,
+            totalMarks: contest.sections?.mcq?.totalMarks ?? 0,
+            proctored: contest.sections?.mcq?.proctored ?? true
+          },
+          coding: {
+            enabled: contest.sections?.coding?.enabled ?? false,
+            totalMarks: contest.sections?.coding?.totalMarks ?? 0,
+            proctored: contest.sections?.coding?.proctored ?? true
+          },
+          forms: {
+            enabled: contest.sections?.forms?.enabled ?? false,
+            totalMarks: contest.sections?.forms?.totalMarks ?? 0,
+            proctored: contest.sections?.forms?.proctored ?? false
+          }
+        },
         rules: contest.rules,
         prizes: contest.prizes,
         isPublished: contest.isPublished
@@ -162,8 +181,8 @@ const CreateContest = () => {
       return;
     }
 
-    if (!formData.sections.mcq.enabled && !formData.sections.coding.enabled) {
-      toast.error('At least one section (MCQ or Coding) must be enabled');
+    if (!formData.sections.mcq.enabled && !formData.sections.coding.enabled && !formData.sections.forms?.enabled) {
+      toast.error('At least one section (MCQ, Coding, or Forms) must be enabled');
       return;
     }
 
@@ -183,11 +202,18 @@ const CreateContest = () => {
         sections: {
           mcq: {
             enabled: formData.sections.mcq.enabled,
-            totalMarks: parseInt(formData.sections.mcq.totalMarks)
+            totalMarks: parseInt(formData.sections.mcq.totalMarks) || 0,
+            proctored: formData.sections.mcq.proctored ?? true
           },
           coding: {
             enabled: formData.sections.coding.enabled,
-            totalMarks: parseInt(formData.sections.coding.totalMarks)
+            totalMarks: parseInt(formData.sections.coding.totalMarks) || 0,
+            proctored: formData.sections.coding.proctored ?? true
+          },
+          forms: {
+            enabled: formData.sections.forms?.enabled || false,
+            totalMarks: parseInt(formData.sections.forms?.totalMarks) || 0,
+            proctored: formData.sections.forms?.proctored ?? false
           }
         },
         rules: formData.rules.filter(r => r.trim()),
@@ -356,19 +382,36 @@ const CreateContest = () => {
                   </div>
 
                   {formData.sections.mcq.enabled && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Total Marks
-                      </label>
-                      <input
-                        type="number"
-                        name="sections.mcq.totalMarks"
-                        value={formData.sections.mcq.totalMarks}
-                        onChange={handleChange}
-                        className="input-field"
-                        min="1"
-                        required
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Total Marks
+                        </label>
+                        <input
+                          type="number"
+                          name="sections.mcq.totalMarks"
+                          value={formData.sections.mcq.totalMarks}
+                          onChange={handleChange}
+                          className="input-field"
+                          min="1"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Proctoring
+                        </label>
+                        <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="sections.mcq.proctored"
+                            checked={formData.sections.mcq.proctored}
+                            onChange={handleChange}
+                            className="w-4 h-4 rounded border-gray-600 text-yellow-500 focus:ring-yellow-500"
+                          />
+                          <span className="text-sm text-gray-400">Enable Proctoring</span>
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -389,19 +432,36 @@ const CreateContest = () => {
                   </div>
 
                   {formData.sections.coding.enabled && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Total Marks
-                      </label>
-                      <input
-                        type="number"
-                        name="sections.coding.totalMarks"
-                        value={formData.sections.coding.totalMarks}
-                        onChange={handleChange}
-                        className="input-field"
-                        min="1"
-                        required
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Total Marks
+                        </label>
+                        <input
+                          type="number"
+                          name="sections.coding.totalMarks"
+                          value={formData.sections.coding.totalMarks}
+                          onChange={handleChange}
+                          className="input-field"
+                          min="1"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Proctoring
+                        </label>
+                        <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="sections.coding.proctored"
+                            checked={formData.sections.coding.proctored}
+                            onChange={handleChange}
+                            className="w-4 h-4 rounded border-gray-600 text-yellow-500 focus:ring-yellow-500"
+                          />
+                          <span className="text-sm text-gray-400">Enable Proctoring</span>
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -422,9 +482,21 @@ const CreateContest = () => {
                   </div>
 
                   {formData.sections.forms?.enabled && (
-                    <p className="text-sm text-gray-400">
-                      Create assessment forms after saving the contest. Use the Form Builder to add custom fields.
-                    </p>
+                    <div className="space-y-3">
+                      <p className="text-sm text-gray-400">
+                        Create assessment forms after saving the contest. Use the Form Builder to add custom fields.
+                      </p>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          name="sections.forms.proctored"
+                          checked={formData.sections.forms?.proctored || false}
+                          onChange={handleChange}
+                          className="w-4 h-4 rounded border-gray-600 text-yellow-500 focus:ring-yellow-500"
+                        />
+                        <span className="text-sm text-gray-400">Enable Proctoring (disable for PPT/file submissions)</span>
+                      </label>
+                    </div>
                   )}
                 </div>
               </div>

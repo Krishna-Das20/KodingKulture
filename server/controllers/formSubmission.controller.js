@@ -100,7 +100,8 @@ export const submitForm = async (req, res) => {
             formId,
             contestId,
             userId: req.user._id,
-            responses: processedResponses
+            responses: processedResponses,
+            timeTaken: req.body.timeTaken || 0
         });
 
         res.status(201).json({
@@ -249,21 +250,31 @@ export const evaluateSubmission = async (req, res) => {
 
         await submission.save();
 
-        // Send email notification to participant
-        try {
-            await sendMail({
-                to: submission.userId.email,
-                subject: `Form Evaluated - ${submission.formId.title}`,
-                html: `
-          <h2>Your form submission has been evaluated</h2>
-          <p>Hello ${submission.userId.name},</p>
-          <p>Your submission for <strong>${submission.formId.title}</strong> has been evaluated.</p>
-          <p><strong>Score:</strong> ${submission.totalScore} / ${submission.maxPossibleScore}</p>
-          <p>Log in to view detailed feedback.</p>
-        `
-            });
-        } catch (emailError) {
-            console.error('Failed to send evaluation email:', emailError);
+        // Send email notification to participant only if they requested it
+        if (submission.notifyOnEvaluate) {
+            try {
+                await sendMail({
+                    to: submission.userId.email,
+                    subject: `Your Form Submission Has Been Reviewed - ${submission.formId.title}`,
+                    html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #1e293b; color: #f1f5f9; border-radius: 12px;">
+                <h2 style="color: #FF6B35;">🎉 Your Form Has Been Reviewed!</h2>
+                <p>Hello ${submission.userId.name},</p>
+                <p>Great news! Your form submission for <strong style="color: #22c55e;">${submission.formId.title}</strong> has been reviewed by the evaluator.</p>
+                <p>Log in to your account to view your detailed results and feedback.</p>
+                <div style="margin: 20px 0; text-align: center;">
+                  <a href="${process.env.CLIENT_URL}/contest/${submission.contestId}/review" 
+                     style="background: #FF6B35; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
+                    View Your Results
+                  </a>
+                </div>
+                <p style="color: #94a3b8; font-size: 12px;">Best of luck!</p>
+              </div>
+            `
+                });
+            } catch (emailError) {
+                console.error('Failed to send evaluation email:', emailError);
+            }
         }
 
         res.status(200).json({
@@ -321,6 +332,52 @@ export const getSubmissionById = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Server error fetching submission'
+        });
+    }
+};
+
+// @desc    Request notification when form is evaluated (participant)
+// @route   POST /api/form-submissions/:id/request-notification
+// @access  Private
+export const requestNotification = async (req, res) => {
+    try {
+        const submission = await FormSubmission.findById(req.params.id);
+
+        if (!submission) {
+            return res.status(404).json({
+                success: false,
+                message: 'Submission not found'
+            });
+        }
+
+        // Verify ownership
+        if (submission.userId.toString() !== req.user._id.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: 'Access denied'
+            });
+        }
+
+        // Already fully evaluated
+        if (submission.isFullyEvaluated) {
+            return res.status(400).json({
+                success: false,
+                message: 'Submission has already been evaluated'
+            });
+        }
+
+        submission.notifyOnEvaluate = true;
+        await submission.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'You will be notified via email when your submission is reviewed'
+        });
+    } catch (error) {
+        console.error('Request notification error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
         });
     }
 };

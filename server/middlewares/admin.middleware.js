@@ -53,8 +53,8 @@ export const contestOwner = async (req, res, next) => {
 
     // Check if organiser owns this contest
     if (req.user.role === 'ORGANISER' && contest.createdBy.toString() === req.user._id.toString()) {
-      // Organisers cannot edit APPROVED contests
-      if (contest.verificationStatus === 'APPROVED') {
+      // Organisers cannot EDIT approved contests, but can VIEW (GET requests)
+      if (contest.verificationStatus === 'APPROVED' && req.method !== 'GET') {
         return res.status(403).json({
           success: false,
           message: 'Contest is approved. Only admin can make changes.'

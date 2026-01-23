@@ -197,6 +197,28 @@ const MCQSection = () => {
     toast.success('Answer cleared');
   };
 
+  // Save answers and navigate back to hub
+  const handleSaveAndBackToHub = async () => {
+    try {
+      if (Object.keys(answers).length > 0) {
+        const formattedAnswers = Object.keys(answers).map(mcqId => ({
+          mcqId,
+          selectedOptions: answers[mcqId]
+        }));
+
+        await api.post(`/contests/${contestId}/save-progress`, {
+          mcqAnswers: formattedAnswers
+        });
+        toast.success('Progress saved!');
+      }
+    } catch (error) {
+      console.error('Error saving progress:', error);
+      toast.error('Failed to save progress, but navigating anyway');
+    }
+
+    navigate(`/contest/${contestId}/hub`);
+  };
+
   const handleSubmit = async () => {
     if (submitting) return;
 
@@ -294,11 +316,11 @@ const MCQSection = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
-                onClick={() => navigate(`/contest/${contestId}/hub`)}
+                onClick={handleSaveAndBackToHub}
                 className="text-gray-400 hover:text-white flex items-center gap-2"
               >
                 <ArrowLeft className="w-5 h-5" />
-                Back to Hub
+                Save & Back to Hub
               </button>
               <div>
                 <h1 className="text-xl font-bold">{contestInfo?.title || 'MCQ Section'}</h1>

@@ -94,6 +94,16 @@ const formSubmissionSchema = new mongoose.Schema({
     submittedAt: {
         type: Date,
         default: Date.now
+    },
+    // Participant requested email notification when evaluated
+    notifyOnEvaluate: {
+        type: Boolean,
+        default: false
+    },
+    // Time spent on this form in seconds
+    timeTaken: {
+        type: Number,
+        default: 0
     }
 }, { timestamps: true });
 

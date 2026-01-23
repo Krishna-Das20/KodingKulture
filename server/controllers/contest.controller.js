@@ -1097,7 +1097,7 @@ export const endContestManually = async (req, res) => {
 
         // Create or update result
         await Result.findOneAndUpdate(
-          { contestId, odingKulture: progress.userId._id },
+          { contestId, userId: progress.userId._id },
           {
             contestId,
             userId: progress.userId._id,
@@ -1122,8 +1122,9 @@ export const endContestManually = async (req, res) => {
       }
     }
 
-    // Update contest end time to now
+    // Update contest end time to now and set status to ENDED
     contest.endTime = new Date();
+    contest.status = 'ENDED';
     contest.manuallyEnded = true;
     contest.endedBy = req.user._id;
     await contest.save();
