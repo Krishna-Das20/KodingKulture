@@ -11,7 +11,8 @@ export const getAllContests = async (req, res) => {
   try {
     const { status } = req.query;
 
-    const query = { isPublished: true };
+    // Public view: only show published AND approved contests
+    const query = { isPublished: true, verificationStatus: 'APPROVED' };
     if (status) {
       query.status = status;
     }
@@ -64,19 +65,25 @@ export const getContestById = async (req, res) => {
 
 // @desc    Create contest
 // @route   POST /api/contests
-// @access  Private/Admin
+// @access  Private/Admin or Organiser
 export const createContest = async (req, res) => {
   try {
     const contestData = {
       ...req.body,
-      createdBy: req.user._id
+      createdBy: req.user._id,
+      // Admin-created contests are auto-approved, Organiser-created go to PENDING
+      verificationStatus: req.user.role === 'ADMIN' ? 'APPROVED' : 'PENDING'
     };
 
     const contest = await Contest.create(contestData);
 
+    const message = req.user.role === 'ADMIN'
+      ? 'Contest created successfully'
+      : 'Contest created and submitted for approval';
+
     res.status(201).json({
       success: true,
-      message: 'Contest created successfully',
+      message,
       contest
     });
   } catch (error) {
@@ -934,6 +941,204 @@ export const getContestParticipants = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error fetching participants'
+    });
+  }
+};
+
+// @desc    Get contests for admin/organiser dashboard
+// @route   GET /api/contests/admin
+// @access  Private/Admin or Organiser
+export const getAdminContests = async (req, res) => {
+  try {
+    let query = {};
+
+    // If organiser, only show their own contests
+    if (req.user.role === 'ORGANISER') {
+      query.createdBy = req.user._id;
+    }
+    // Admin sees all contests
+
+    const contests = await Contest.find(query)
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'name email');
+
+    // Calculate stats
+    const stats = {
+      totalContests: contests.length,
+      liveContests: contests.filter(c => c.status === 'LIVE').length,
+      upcomingContests: contests.filter(c => c.status === 'UPCOMING').length,
+      pendingApproval: contests.filter(c => c.verificationStatus === 'PENDING').length,
+      totalParticipants: contests.reduce((sum, c) => sum + (c.participants?.length || 0), 0)
+    };
+
+    res.status(200).json({
+      success: true,
+      count: contests.length,
+      stats,
+      contests
+    });
+  } catch (error) {
+    console.error('Get admin contests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching contests'
+    });
+  }
+};
+
+// @desc    Manually end a contest and auto-submit all active participants
+// @route   POST /api/contests/:id/end
+// @access  Private/Admin or Organiser
+export const endContestManually = async (req, res) => {
+  try {
+    const contestId = req.params.id;
+
+    const contest = await Contest.findById(contestId);
+    if (!contest) {
+      return res.status(404).json({
+        success: false,
+        message: 'Contest not found'
+      });
+    }
+
+    // Check ownership for organiser
+    if (req.user.role === 'ORGANISER' && contest.createdBy.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only end your own contests.'
+      });
+    }
+
+    // Check if contest is already ended
+    if (new Date(contest.endTime) < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Contest has already ended'
+      });
+    }
+
+    // Get all active participants (STARTED but not SUBMITTED)
+    const activeParticipants = await ContestProgress.find({
+      contestId,
+      status: 'STARTED'
+    }).populate('userId', 'name email');
+
+    let autoSubmittedCount = 0;
+
+    // Auto-submit each active participant
+    for (const progress of activeParticipants) {
+      try {
+        // Calculate MCQ score from saved answers
+        let mcqScore = 0;
+        const mcqAnswers = progress.mcqAnswers || [];
+
+        // Get MCQs for this contest to calculate scores
+        const MCQ = (await import('../models/MCQ.js')).default;
+        const ContestMCQ = (await import('../models/ContestMCQ.js')).default;
+
+        // Direct MCQs
+        const directMCQs = await MCQ.find({ contestId });
+
+        // Library MCQs linked to contest
+        const contestMCQLinks = await ContestMCQ.find({ contestId }).populate('mcqId');
+        const libraryMCQs = contestMCQLinks.filter(link => link.mcqId).map(link => ({
+          ...link.mcqId.toObject(),
+          marks: link.marks || link.mcqId.marks
+        }));
+
+        const allMCQs = [...directMCQs, ...libraryMCQs];
+
+        // Calculate score
+        for (const answer of mcqAnswers) {
+          const mcq = allMCQs.find(m => m._id.toString() === answer.mcqId.toString());
+          if (mcq) {
+            const correctAnswers = mcq.correctAnswers || [];
+            const userAnswers = answer.selectedOptions || [];
+
+            const isCorrect =
+              correctAnswers.length === userAnswers.length &&
+              correctAnswers.every(a => userAnswers.includes(a));
+
+            if (isCorrect) {
+              mcqScore += mcq.marks || 0;
+            }
+          }
+        }
+
+        // Calculate coding score from existing submissions
+        const CodingSubmission = (await import('../models/CodingSubmission.js')).default;
+        const CodingProblem = (await import('../models/CodingProblem.js')).default;
+        const ContestCodingProblem = (await import('../models/ContestCodingProblem.js')).default;
+
+        const directProblems = await CodingProblem.find({ contestId });
+        const contestProblemLinks = await ContestCodingProblem.find({ contestId }).populate('problemId');
+        const libraryProblems = contestProblemLinks.filter(link => link.problemId).map(link => ({
+          ...link.problemId.toObject(),
+          score: link.score || link.problemId.score
+        }));
+
+        const allProblems = [...directProblems, ...libraryProblems];
+        let codingScore = 0;
+
+        for (const problem of allProblems) {
+          const bestSubmission = await CodingSubmission.findOne({
+            problemId: problem._id,
+            contestId,
+            userId: progress.userId._id,
+            verdict: 'ACCEPTED'
+          }).sort({ score: -1 });
+
+          if (bestSubmission) {
+            codingScore += bestSubmission.score || problem.score || 0;
+          }
+        }
+
+        const totalScore = mcqScore + codingScore;
+
+        // Create or update result
+        await Result.findOneAndUpdate(
+          { contestId, odingKulture: progress.userId._id },
+          {
+            contestId,
+            userId: progress.userId._id,
+            mcqScore,
+            codingScore,
+            totalScore,
+            submittedAt: new Date(),
+            isAutoSubmitted: true,
+            autoSubmitReason: 'CONTEST_ENDED_BY_ADMIN'
+          },
+          { upsert: true, new: true }
+        );
+
+        // Update progress status
+        progress.status = 'TIMED_OUT';
+        progress.submittedAt = new Date();
+        await progress.save();
+
+        autoSubmittedCount++;
+      } catch (err) {
+        console.error(`Failed to auto-submit for user ${progress.userId._id}:`, err);
+      }
+    }
+
+    // Update contest end time to now
+    contest.endTime = new Date();
+    contest.manuallyEnded = true;
+    contest.endedBy = req.user._id;
+    await contest.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Contest ended successfully. ${autoSubmittedCount} participants were auto-submitted.`,
+      autoSubmittedCount,
+      totalActiveParticipants: activeParticipants.length
+    });
+  } catch (error) {
+    console.error('End contest error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error ending contest'
     });
   }
 };

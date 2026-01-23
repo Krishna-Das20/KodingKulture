@@ -299,3 +299,49 @@ export const getUserDetailedStats = async (req, res) => {
     });
   }
 };
+
+// @desc    Get admin leaderboard with full user details (email, phone)
+// @route   GET /api/leaderboard/:contestId/admin
+// @access  Private (Admin or Contest Owner)
+export const getAdminLeaderboard = async (req, res) => {
+  try {
+    const { contestId } = req.params;
+
+    const results = await Result.find({
+      contestId,
+      status: { $in: ['SUBMITTED', 'EVALUATED'] }
+    })
+      .populate('userId', 'name email college phone avatar')
+      .sort({ totalScore: -1, timeTaken: 1 })
+      .lean();
+
+    // Assign ranks
+    let currentRank = 1;
+    for (let i = 0; i < results.length; i++) {
+      if (i > 0) {
+        const prev = results[i - 1];
+        const curr = results[i];
+        if (curr.totalScore === prev.totalScore && curr.timeTaken === prev.timeTaken) {
+          results[i].rank = results[i - 1].rank;
+        } else {
+          currentRank = i + 1;
+          results[i].rank = currentRank;
+        }
+      } else {
+        results[i].rank = currentRank;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      count: results.length,
+      leaderboard: results
+    });
+  } catch (error) {
+    console.error('Get admin leaderboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error fetching admin leaderboard'
+    });
+  }
+};

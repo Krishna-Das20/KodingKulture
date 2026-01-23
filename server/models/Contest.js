@@ -53,6 +53,16 @@ const contestSchema = new mongoose.Schema({
         type: Number,
         default: 0
       }
+    },
+    forms: {
+      enabled: {
+        type: Boolean,
+        default: false
+      },
+      totalMarks: {
+        type: Number,
+        default: 0
+      }
     }
   },
   rules: [{
@@ -86,6 +96,15 @@ const contestSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  verificationStatus: {
+    type: String,
+    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+    default: 'APPROVED' // Admin-created default to APPROVED, Organiser-created will be set to PENDING
+  },
+  rejectionReason: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true
@@ -96,7 +115,7 @@ contestSchema.index({ status: 1, startTime: -1 });
 contestSchema.index({ isPublished: 1 });
 
 // Virtual for total marks
-contestSchema.virtual('totalMarks').get(function() {
+contestSchema.virtual('totalMarks').get(function () {
   return (this.sections.mcq.totalMarks || 0) + (this.sections.coding.totalMarks || 0);
 });
 

@@ -9,7 +9,7 @@ import { Save, X, Plus, Trash2, Calendar } from 'lucide-react';
 const CreateContest = () => {
   const navigate = useNavigate();
   const { contestId } = useParams();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAdminOrOrganiser } = useAuth();
   const isEditMode = Boolean(contestId);
 
   const [formData, setFormData] = useState({
@@ -27,6 +27,10 @@ const CreateContest = () => {
       coding: {
         enabled: true,
         totalMarks: 300
+      },
+      forms: {
+        enabled: false,
+        totalMarks: 0
       }
     },
     rules: ['No cheating allowed', 'Complete all questions within time limit'],
@@ -37,7 +41,7 @@ const CreateContest = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!isAdminOrOrganiser) {
       toast.error('Access denied');
       navigate('/');
       return;
@@ -46,7 +50,7 @@ const CreateContest = () => {
     if (isEditMode) {
       loadContest();
     }
-  }, [contestId, isAdmin]);
+  }, [contestId, isAdminOrOrganiser]);
 
   const loadContest = async () => {
     try {
@@ -137,7 +141,7 @@ const CreateContest = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!isAdmin) {
+    if (!isAdminOrOrganiser) {
       toast.error('Access denied');
       return;
     }
@@ -399,6 +403,28 @@ const CreateContest = () => {
                         required
                       />
                     </div>
+                  )}
+                </div>
+
+                {/* Forms Section */}
+                <div className="p-4 bg-dark-700/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        name="sections.forms.enabled"
+                        checked={formData.sections.forms?.enabled || false}
+                        onChange={handleChange}
+                        className="w-5 h-5 rounded border-gray-600 text-primary-500 focus:ring-primary-500"
+                      />
+                      <span className="text-lg font-semibold">Custom Forms Section</span>
+                    </label>
+                  </div>
+
+                  {formData.sections.forms?.enabled && (
+                    <p className="text-sm text-gray-400">
+                      Create assessment forms after saving the contest. Use the Form Builder to add custom fields.
+                    </p>
                   )}
                 </div>
               </div>

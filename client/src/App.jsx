@@ -17,6 +17,7 @@ import ContestDetails from './pages/contest/ContestDetails';
 import ContestHub from './pages/contest/ContestHub';
 import MCQSection from './pages/contest/MCQSection';
 import CodingSection from './pages/contest/CodingSection';
+import FormSection from './pages/contest/FormSection';
 import ContestReview from './pages/contest/ContestReview';
 import UserDashboard from './pages/dashboard/UserDashboard';
 import Leaderboard from './pages/leaderboard/Leaderboard';
@@ -30,6 +31,10 @@ import MCQLibrary from './pages/admin/MCQLibrary';
 import CodingLibrary from './pages/admin/CodingLibrary';
 import ContestViolations from './pages/admin/ContestViolations';
 import ContestParticipants from './pages/admin/ContestParticipants';
+import UserManagement from './pages/admin/UserManagement';
+import VerifyContests from './pages/admin/VerifyContests';
+import FormBuilder from './pages/admin/FormBuilder';
+import FormEvaluation from './pages/admin/FormEvaluation';
 import Loader from './components/common/Loader';
 import ProctorGuard from './components/contest/ProctorGuard';
 
@@ -61,6 +66,25 @@ const AdminRoute = ({ children }) => {
   }
 
   if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
+// Admin or Organiser Route Component
+const AdminOrOrganiserRoute = ({ children }) => {
+  const { isAuthenticated, isAdminOrOrganiser, loading } = useAuth();
+
+  if (loading) {
+    return <Loader fullScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdminOrOrganiser) {
     return <Navigate to="/" replace />;
   }
 
@@ -201,9 +225,9 @@ function App() {
             path="/contest/:contestId/hub"
             element={
               <ProtectedRoute>
-                <ContestWithTimer>
+                <ProctoredContest>
                   <ContestHub />
-                </ContestWithTimer>
+                </ProctoredContest>
               </ProtectedRoute>
             }
           />
@@ -231,6 +255,17 @@ function App() {
           />
 
           <Route
+            path="/contest/:contestId/forms"
+            element={
+              <ProtectedRoute>
+                <ProctoredContest>
+                  <FormSection />
+                </ProctoredContest>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/contest/:contestId/review"
             element={
               <ProtectedRoute>
@@ -251,49 +286,77 @@ function App() {
             }
           />
 
-          {/* Admin Routes */}
+          {/* Admin/Organiser Routes */}
           <Route
             path="/admin/dashboard"
             element={
-              <AdminRoute>
+              <AdminOrOrganiserRoute>
                 <Layout><AdminDashboard /></Layout>
-              </AdminRoute>
+              </AdminOrOrganiserRoute>
             }
           />
 
           <Route
             path="/admin/contest/create"
             element={
-              <AdminRoute>
+              <AdminOrOrganiserRoute>
                 <Layout><CreateContest /></Layout>
-              </AdminRoute>
+              </AdminOrOrganiserRoute>
             }
           />
 
           <Route
             path="/admin/contest/edit/:contestId"
             element={
-              <AdminRoute>
+              <AdminOrOrganiserRoute>
                 <Layout><CreateContest /></Layout>
-              </AdminRoute>
+              </AdminOrOrganiserRoute>
             }
           />
 
           <Route
             path="/admin/contest/mcq/:contestId"
             element={
-              <AdminRoute>
+              <AdminOrOrganiserRoute>
                 <Layout><ManageMCQ /></Layout>
-              </AdminRoute>
+              </AdminOrOrganiserRoute>
             }
           />
 
           <Route
             path="/admin/contest/coding/:contestId"
             element={
-              <AdminRoute>
+              <AdminOrOrganiserRoute>
                 <Layout><ManageCodingProblems /></Layout>
-              </AdminRoute>
+              </AdminOrOrganiserRoute>
+            }
+          />
+
+          {/* Form Builder Routes */}
+          <Route
+            path="/admin/contest/forms/:contestId"
+            element={
+              <AdminOrOrganiserRoute>
+                <Layout><FormBuilder /></Layout>
+              </AdminOrOrganiserRoute>
+            }
+          />
+
+          <Route
+            path="/admin/contest/forms/:contestId/:formId"
+            element={
+              <AdminOrOrganiserRoute>
+                <Layout><FormBuilder /></Layout>
+              </AdminOrOrganiserRoute>
+            }
+          />
+
+          <Route
+            path="/admin/contest/evaluate/:contestId"
+            element={
+              <AdminOrOrganiserRoute>
+                <Layout><FormEvaluation /></Layout>
+              </AdminOrOrganiserRoute>
             }
           />
 
@@ -316,13 +379,33 @@ function App() {
             }
           />
 
+          {/* User Management Route */}
+          <Route
+            path="/admin/users"
+            element={
+              <AdminRoute>
+                <Layout><UserManagement /></Layout>
+              </AdminRoute>
+            }
+          />
+
+          {/* Contest Verification Route */}
+          <Route
+            path="/admin/verify-contests"
+            element={
+              <AdminRoute>
+                <Layout><VerifyContests /></Layout>
+              </AdminRoute>
+            }
+          />
+
           {/* Proctoring Violations Route */}
           <Route
             path="/admin/contest/:contestId/violations"
             element={
-              <AdminRoute>
+              <AdminOrOrganiserRoute>
                 <ContestViolations />
-              </AdminRoute>
+              </AdminOrOrganiserRoute>
             }
           />
 
@@ -330,9 +413,9 @@ function App() {
           <Route
             path="/admin/contest/:contestId/participants"
             element={
-              <AdminRoute>
+              <AdminOrOrganiserRoute>
                 <ContestParticipants />
-              </AdminRoute>
+              </AdminOrOrganiserRoute>
             }
           />
 
