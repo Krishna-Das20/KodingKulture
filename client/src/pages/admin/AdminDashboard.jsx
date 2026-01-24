@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import contestService from '../../services/contestService';
 import api from '../../services/authService';
@@ -19,7 +19,9 @@ import {
   Clock,
   ClipboardList,
   StopCircle,
-  CheckSquare
+  CheckSquare,
+  Globe,
+  DoorOpen
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -245,6 +247,7 @@ const AdminDashboard = () => {
                     <th className="text-left py-3 px-4 text-gray-400 font-semibold">Start - End</th>
                     <th className="text-left py-3 px-4 text-gray-400 font-semibold">Duration</th>
                     <th className="text-left py-3 px-4 text-gray-400 font-semibold">Participants</th>
+                    <th className="text-left py-3 px-4 text-gray-400 font-semibold">Room</th>
                     <th className="text-left py-3 px-4 text-gray-400 font-semibold">Sections</th>
                     <th className="text-right py-3 px-4 text-gray-400 font-semibold">Actions</th>
                   </tr>
@@ -298,6 +301,28 @@ const AdminDashboard = () => {
                             <span className="text-gray-400">/ {contest.maxParticipants}</span>
                           )}
                         </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        {contest.roomId ? (
+                          <Link
+                            to={`/rooms/${contest.roomId._id}`}
+                            className="flex flex-col items-start gap-0.5 hover:opacity-80 transition-opacity"
+                          >
+                            <span className="flex items-center gap-1 text-primary-400">
+                              <DoorOpen className="w-4 h-4" />
+                            </span>
+                            <span className="text-primary-400 text-xs underline">
+                              {contest.roomId.name || 'Room'}
+                            </span>
+                          </Link>
+                        ) : (
+                          <span className="flex flex-col items-start gap-0.5">
+                            <span className="flex items-center gap-1 text-green-400">
+                              <Globe className="w-4 h-4" />
+                            </span>
+                            <span className="text-green-400 text-xs">Public</span>
+                          </span>
+                        )}
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex gap-2">

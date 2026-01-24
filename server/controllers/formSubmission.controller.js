@@ -2,6 +2,7 @@ import FormSubmission from '../models/FormSubmission.js';
 import Form from '../models/Form.js';
 import Contest from '../models/Contest.js';
 import User from '../models/User.js';
+import Result from '../models/Result.js';
 import { sendMail } from '../services/emailService.js';
 
 // @desc    Submit a form (participant)
@@ -275,6 +276,47 @@ export const evaluateSubmission = async (req, res) => {
             } catch (emailError) {
                 console.error('Failed to send evaluation email:', emailError);
             }
+        }
+
+        // Update the Result model with the new forms score
+        try {
+            // Get all form submissions for this user and contest to calculate total forms score
+            const allFormSubmissions = await FormSubmission.find({
+                userId: submission.userId._id,
+                contestId: submission.contestId
+            });
+
+            // Calculate total forms score from all submissions
+            let totalFormsScore = 0;
+            let allEvaluated = true;
+
+            for (const fs of allFormSubmissions) {
+                totalFormsScore += fs.totalScore || 0;
+                if (!fs.isFullyEvaluated) {
+                    allEvaluated = false;
+                }
+            }
+
+            // Update the Result
+            const result = await Result.findOne({
+                userId: submission.userId._id,
+                contestId: submission.contestId
+            });
+
+            if (result) {
+                result.formsScore = totalFormsScore;
+                result.isFormsEvaluated = allEvaluated;
+                // Recalculate total score
+                result.totalScore = (result.mcqScore || 0) + (result.codingScore || 0) + totalFormsScore;
+
+                if (allEvaluated && result.status === 'SUBMITTED') {
+                    result.status = 'EVALUATED';
+                }
+
+                await result.save();
+            }
+        } catch (resultError) {
+            console.error('Failed to update Result with forms score:', resultError);
         }
 
         res.status(200).json({

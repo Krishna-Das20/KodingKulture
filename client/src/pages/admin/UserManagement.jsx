@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Users, Shield, UserCheck, UserX, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Users, Shield, UserCheck, UserX, ChevronLeft, ChevronRight, DoorOpen, X } from 'lucide-react';
 import api from '../../services/authService';
 import toast from 'react-hot-toast';
 import './UserManagement.css';
@@ -10,6 +10,15 @@ const UserManagement = () => {
     const [search, setSearch] = useState('');
     const [roleFilter, setRoleFilter] = useState('');
     const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
+
+    // Add to room states
+    const [rooms, setRooms] = useState([]);
+    const [loadingRooms, setLoadingRooms] = useState(false);
+    const [showRoomModal, setShowRoomModal] = useState(false);
+    const [selectedUser, setSelectedUser] = useState(null);
+    const [selectedRoomId, setSelectedRoomId] = useState('');
+    const [selectedRoomRole, setSelectedRoomRole] = useState('PARTICIPANT');
+    const [addingToRoom, setAddingToRoom] = useState(false);
 
     const fetchUsers = async (page = 1) => {
         try {
@@ -28,8 +37,21 @@ const UserManagement = () => {
         }
     };
 
+    const fetchRooms = async () => {
+        try {
+            setLoadingRooms(true);
+            const { data } = await api.get('/rooms');
+            setRooms(data.rooms);
+        } catch (error) {
+            console.error('Failed to fetch rooms:', error);
+        } finally {
+            setLoadingRooms(false);
+        }
+    };
+
     useEffect(() => {
         fetchUsers();
+        fetchRooms();
     }, [roleFilter]);
 
     const handleSearch = (e) => {
@@ -44,6 +66,35 @@ const UserManagement = () => {
             fetchUsers(pagination.page);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to update role');
+        }
+    };
+
+    const openAddToRoomModal = (user) => {
+        setSelectedUser(user);
+        setSelectedRoomId('');
+        setSelectedRoomRole('PARTICIPANT');
+        setShowRoomModal(true);
+    };
+
+    const handleAddToRoom = async () => {
+        if (!selectedRoomId || !selectedUser) {
+            toast.error('Please select a room');
+            return;
+        }
+
+        try {
+            setAddingToRoom(true);
+            await api.post(`/rooms/${selectedRoomId}/members`, {
+                email: selectedUser.email,
+                role: selectedRoomRole
+            });
+            toast.success(`${selectedUser.name} added to room as ${selectedRoomRole === 'ORGANISER' ? 'Co-Organiser' : 'Participant'}`);
+            setShowRoomModal(false);
+            setSelectedUser(null);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to add user to room');
+        } finally {
+            setAddingToRoom(false);
         }
     };
 
@@ -117,26 +168,35 @@ const UserManagement = () => {
                                         )}
                                     </td>
                                     <td>
-                                        {user.role !== 'ADMIN' && (
-                                            <div className="action-buttons">
-                                                {user.role === 'USER' && (
-                                                    <button
-                                                        className="make-organiser-btn"
-                                                        onClick={() => updateRole(user._id, 'ORGANISER')}
-                                                    >
-                                                        <Shield size={16} /> Make Organiser
-                                                    </button>
-                                                )}
-                                                {user.role === 'ORGANISER' && (
-                                                    <button
-                                                        className="remove-organiser-btn"
-                                                        onClick={() => updateRole(user._id, 'USER')}
-                                                    >
-                                                        Remove Organiser
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
+                                        <div className="action-buttons">
+                                            {user.role !== 'ADMIN' && (
+                                                <>
+                                                    {user.role === 'USER' && (
+                                                        <button
+                                                            className="make-organiser-btn"
+                                                            onClick={() => updateRole(user._id, 'ORGANISER')}
+                                                        >
+                                                            <Shield size={16} /> Make Organiser
+                                                        </button>
+                                                    )}
+                                                    {user.role === 'ORGANISER' && (
+                                                        <button
+                                                            className="remove-organiser-btn"
+                                                            onClick={() => updateRole(user._id, 'USER')}
+                                                        >
+                                                            Remove Organiser
+                                                        </button>
+                                                    )}
+                                                </>
+                                            )}
+                                            <button
+                                                className="add-to-room-btn"
+                                                onClick={() => openAddToRoomModal(user)}
+                                                title="Add to Room"
+                                            >
+                                                <DoorOpen size={16} /> Add to Room
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -160,6 +220,78 @@ const UserManagement = () => {
                     <ChevronRight size={18} />
                 </button>
             </div>
+
+            {/* Add to Room Modal */}
+            {showRoomModal && selectedUser && (
+                <div className="modal-overlay">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h3>Add User to Room</h3>
+                            <button
+                                className="close-btn"
+                                onClick={() => setShowRoomModal(false)}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="modal-body">
+                            <p className="user-info">
+                                Adding <strong>{selectedUser.name}</strong> ({selectedUser.email})
+                            </p>
+
+                            <div className="form-group">
+                                <label>Select Room</label>
+                                <select
+                                    value={selectedRoomId}
+                                    onChange={(e) => setSelectedRoomId(e.target.value)}
+                                    className="room-select"
+                                >
+                                    <option value="">-- Select a Room --</option>
+                                    {rooms.map((room) => (
+                                        <option key={room._id} value={room._id}>
+                                            {room.name} ({room.shortCode})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Role in Room</label>
+                                <select
+                                    value={selectedRoomRole}
+                                    onChange={(e) => setSelectedRoomRole(e.target.value)}
+                                    className="role-select"
+                                >
+                                    <option value="PARTICIPANT">Participant</option>
+                                    {selectedUser.role === 'ORGANISER' && (
+                                        <option value="ORGANISER">Co-Organiser</option>
+                                    )}
+                                </select>
+                                {selectedUser.role === 'USER' && (
+                                    <p className="hint-text">
+                                        Only Organisers can be added as Co-Organisers
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button
+                                className="cancel-btn"
+                                onClick={() => setShowRoomModal(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="confirm-btn"
+                                onClick={handleAddToRoom}
+                                disabled={addingToRoom || !selectedRoomId}
+                            >
+                                {addingToRoom ? 'Adding...' : 'Add to Room'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -3,6 +3,7 @@ import Result from '../models/Result.js';
 import Violation from '../models/Violation.js';
 import ContestRegistration from '../models/ContestRegistration.js';
 import ContestProgress from '../models/ContestProgress.js';
+import Room from '../models/Room.js';
 
 // @desc    Get all contests
 // @route   GET /api/contests
@@ -11,8 +12,12 @@ export const getAllContests = async (req, res) => {
   try {
     const { status } = req.query;
 
-    // Public view: only show published AND approved contests
-    const query = { isPublished: true, verificationStatus: 'APPROVED' };
+    // Public view: only show published AND approved contests that are NOT room-specific
+    const query = {
+      isPublished: true,
+      verificationStatus: 'APPROVED',
+      $or: [{ roomId: null }, { roomId: { $exists: false } }] // Exclude room contests
+    };
     if (status) {
       query.status = status;
     }
@@ -68,11 +73,39 @@ export const getContestById = async (req, res) => {
 // @access  Private/Admin or Organiser
 export const createContest = async (req, res) => {
   try {
+    const { roomId } = req.body;
+
+    // Determine verification status:
+    // - Admin contests: auto-approved
+    // - Room contests: auto-approved (no admin verification needed)
+    // - Regular organiser contests: pending approval
+    let verificationStatus = 'PENDING';
+    if (req.user.role === 'ADMIN') {
+      verificationStatus = 'APPROVED';
+    } else if (roomId) {
+      // Verify the user is owner or co-organiser of the room
+      const room = await Room.findById(roomId);
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: 'Room not found'
+        });
+      }
+      if (!room.isOwner(req.user._id) && !room.isCoOrganiser(req.user._id)) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to create contests in this room'
+        });
+      }
+      verificationStatus = 'APPROVED'; // Room contests auto-approved
+    }
+
     const contestData = {
       ...req.body,
       createdBy: req.user._id,
-      // Admin-created contests are auto-approved, Organiser-created go to PENDING
-      verificationStatus: req.user.role === 'ADMIN' ? 'APPROVED' : 'PENDING'
+      verificationStatus,
+      // Convert empty string roomId to null for proper MongoDB handling
+      roomId: roomId && roomId.trim() !== '' ? roomId : null
     };
 
     const contest = await Contest.create(contestData);
@@ -960,7 +993,8 @@ export const getAdminContests = async (req, res) => {
 
     const contests = await Contest.find(query)
       .sort({ createdAt: -1 })
-      .populate('createdBy', 'name email');
+      .populate('createdBy', 'name email')
+      .populate('roomId', 'name shortCode');
 
     // Calculate stats
     const stats = {

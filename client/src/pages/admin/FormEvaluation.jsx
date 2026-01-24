@@ -250,8 +250,8 @@ const FormEvaluation = () => {
                                     <div
                                         key={response.fieldId}
                                         className={`p-5 rounded-lg border-l-4 ${isAuto
-                                                ? 'bg-green-500/5 border-green-500'
-                                                : 'bg-yellow-500/5 border-yellow-400'
+                                            ? 'bg-green-500/5 border-green-500'
+                                            : 'bg-yellow-500/5 border-yellow-400'
                                             }`}
                                     >
                                         {/* Side-by-side: Question | Answer */}
@@ -291,7 +291,16 @@ const FormEvaluation = () => {
                                                 <div className="mb-4 p-3 bg-dark-900 rounded text-gray-200 min-h-[60px]">
                                                     {Array.isArray(response.value)
                                                         ? response.value.join(', ')
-                                                        : response.value || <em className="text-gray-500">No response</em>}
+                                                        : field?.type === 'URL' && response.value ? (
+                                                            <a
+                                                                href={response.value.startsWith('http') ? response.value : `https://${response.value}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-primary-400 underline hover:text-primary-300 break-all"
+                                                            >
+                                                                {response.value}
+                                                            </a>
+                                                        ) : response.value || <em className="text-gray-500">No response</em>}
                                                 </div>
 
                                                 {/* Scoring Section */}

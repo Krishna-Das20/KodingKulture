@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import adminService from '../../services/adminService';
 import contestService from '../../services/contestService';
+import api from '../../services/authService';
 import toast from 'react-hot-toast';
-import { Save, X, Plus, Trash2, Calendar } from 'lucide-react';
+import { Save, X, Plus, Trash2, Calendar, DoorOpen } from 'lucide-react';
 
 const CreateContest = () => {
   const navigate = useNavigate();
   const { contestId } = useParams();
-  const { isAdmin, isAdminOrOrganiser } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { isAdmin, isAdminOrOrganiser, user } = useAuth();
   const isEditMode = Boolean(contestId);
+  const preselectedRoomId = searchParams.get('roomId');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -38,10 +41,13 @@ const CreateContest = () => {
     },
     rules: ['No cheating allowed', 'Complete all questions within time limit'],
     prizes: ['1st Prize: Certificate + Goodies', '2nd Prize: Certificate', '3rd Prize: Certificate'],
-    isPublished: false
+    isPublished: false,
+    roomId: preselectedRoomId || '' // For room-specific contests
   });
 
   const [loading, setLoading] = useState(false);
+  const [rooms, setRooms] = useState([]);
+  const [loadingRooms, setLoadingRooms] = useState(false);
 
   useEffect(() => {
     if (!isAdminOrOrganiser) {
@@ -53,7 +59,40 @@ const CreateContest = () => {
     if (isEditMode) {
       loadContest();
     }
+
+    // Fetch rooms for the organiser
+    if (user?.role === 'ORGANISER' || user?.role === 'ADMIN') {
+      fetchRooms();
+    }
   }, [contestId, isAdminOrOrganiser]);
+
+  const fetchRooms = async () => {
+    setLoadingRooms(true);
+    try {
+      const { data } = await api.get('/rooms');
+      console.log('Fetched rooms:', data.rooms); // Debug log
+
+      // Admin sees all rooms, Organiser sees rooms they manage
+      if (user?.role === 'ADMIN') {
+        setRooms(data.rooms);
+      } else {
+        // Filter rooms where user is owner or co-organiser (using string comparison)
+        const userId = user?._id?.toString() || user?._id;
+        const manageableRooms = data.rooms.filter(room => {
+          const ownerId = room.owner?._id?.toString() || room.owner?._id;
+          const isOwner = ownerId === userId;
+          const isCoOrg = room.coOrganisers?.some(co => (co._id?.toString() || co._id) === userId);
+          console.log('Room:', room.name, 'ownerId:', ownerId, 'userId:', userId, 'isOwner:', isOwner); // Debug
+          return isOwner || isCoOrg;
+        });
+        setRooms(manageableRooms);
+      }
+    } catch (error) {
+      console.error('Failed to fetch rooms:', error);
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
 
   const loadContest = async () => {
     try {
@@ -281,6 +320,49 @@ const CreateContest = () => {
                     required
                   />
                 </div>
+
+                {/* Room Selector - show for all organisers */}
+                {(user?.role === 'ORGANISER' || user?.role === 'ADMIN') && !isEditMode && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <DoorOpen className="inline w-4 h-4 mr-1" />
+                      Room (Optional)
+                    </label>
+                    {loadingRooms ? (
+                      <p className="text-gray-500 text-sm">Loading rooms...</p>
+                    ) : rooms.length > 0 ? (
+                      <>
+                        <select
+                          name="roomId"
+                          value={formData.roomId}
+                          onChange={handleChange}
+                          className="input-field"
+                        >
+                          <option value="">Public Contest (No Room)</option>
+                          {rooms.map(room => (
+                            <option key={room._id} value={room._id}>
+                              {room.name} ({room.shortCode}) {user?.role === 'ADMIN' && room.owner?.name ? `- by ${room.owner.name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                        {formData.roomId && (
+                          <p className="text-xs text-primary-400 mt-1">
+                            This contest will be visible only to room members and auto-approved
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <div className="bg-dark-800 border border-dark-700 rounded-lg p-3">
+                        <p className="text-gray-400 text-sm mb-2">
+                          No rooms available. Create a room to host private contests.
+                        </p>
+                        <a href="/rooms/create" className="text-primary-400 hover:text-primary-300 text-sm">
+                          + Create a Room
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">

@@ -35,6 +35,11 @@ import UserManagement from './pages/admin/UserManagement';
 import VerifyContests from './pages/admin/VerifyContests';
 import FormBuilder from './pages/admin/FormBuilder';
 import FormEvaluation from './pages/admin/FormEvaluation';
+import AdminRooms from './pages/admin/AdminRooms';
+import MyRooms from './pages/rooms/MyRooms';
+import CreateRoom from './pages/rooms/CreateRoom';
+import RoomDetail from './pages/rooms/RoomDetail';
+import JoinRoom from './pages/rooms/JoinRoom';
 import Loader from './components/common/Loader';
 import ProctorGuard from './components/contest/ProctorGuard';
 
@@ -457,6 +462,53 @@ function App() {
               <AdminOrOrganiserRoute>
                 <ContestParticipants />
               </AdminOrOrganiserRoute>
+            }
+          />
+
+          {/* Admin Rooms Route */}
+          <Route
+            path="/admin/rooms"
+            element={
+              <AdminRoute>
+                <Layout><AdminRooms /></Layout>
+              </AdminRoute>
+            }
+          />
+
+          {/* Room Routes */}
+          <Route
+            path="/rooms"
+            element={
+              <ProtectedRoute>
+                <Layout><MyRooms /></Layout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/rooms/create"
+            element={
+              <AdminOrOrganiserRoute>
+                <Layout><CreateRoom /></Layout>
+              </AdminOrOrganiserRoute>
+            }
+          />
+
+          <Route
+            path="/rooms/:roomId"
+            element={
+              <ProtectedRoute>
+                <Layout><RoomDetail /></Layout>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/rooms/join/:shortCode"
+            element={
+              <ProtectedRoute>
+                <Layout><JoinRoom /></Layout>
+              </ProtectedRoute>
             }
           />
 

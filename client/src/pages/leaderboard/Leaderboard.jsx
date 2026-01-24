@@ -6,7 +6,7 @@ import api from '../../services/authService';
 import Loader from '../../components/common/Loader';
 import {
   Trophy, Medal, Award, TrendingUp, ChevronDown, ChevronUp,
-  ArrowLeft, FileText, Code, Timer, Clock, Shield, Users, ClipboardList
+  ArrowLeft, FileText, Code, Timer, Clock, Shield, Users, ClipboardList, Download
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -101,6 +101,60 @@ const Leaderboard = () => {
     }
   };
 
+  // Export leaderboard to CSV
+  const exportToCSV = () => {
+    if (!leaderboard || leaderboard.length === 0) {
+      toast.error('No data to export');
+      return;
+    }
+
+    // Build CSV headers
+    let headers = ['Rank', 'Name', 'Email', 'College', 'MCQ Score', 'Coding Score'];
+    if (formsEnabled) {
+      headers.push('Forms Score');
+    }
+    headers.push('Total Score', 'Time Taken', 'Status');
+
+    // Build CSV rows
+    const rows = leaderboard.map((entry, index) => {
+      const row = [
+        index + 1,
+        entry.userId?.name || 'Unknown',
+        entry.userId?.email || '',
+        entry.userId?.college || '',
+        entry.mcqScore || 0,
+        entry.codingScore || 0
+      ];
+      if (formsEnabled) {
+        row.push(entry.formsScore || 0);
+      }
+      row.push(
+        entry.totalScore || 0,
+        formatTime(entry.totalTimeTaken),
+        entry.status || 'N/A'
+      );
+      return row;
+    });
+
+    // Create CSV content
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `leaderboard_${contestId}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Leaderboard exported successfully!');
+  };
+
   if (loading) {
     return <Loader fullScreen />;
   }
@@ -122,6 +176,13 @@ const Leaderboard = () => {
             {/* Admin/Organiser: View Participants & Violations Button */}
             {isAdminOrOrganiser && (
               <div className="flex items-center gap-2">
+                <button
+                  onClick={exportToCSV}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors border border-green-500/30"
+                >
+                  <Download className="w-4 h-4" />
+                  Export CSV
+                </button>
                 <Link
                   to={`/admin/contest/${contestId}/participants`}
                   className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors border border-purple-500/30"
