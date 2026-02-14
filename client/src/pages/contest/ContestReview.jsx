@@ -250,6 +250,14 @@ const ContestReview = () => {
                                 })}
                             </div>
 
+                            {/* Explanation */}
+                            {currentMCQ.explanation && (
+                                <div className="mt-4 p-4 rounded-lg border border-blue-500/30 bg-blue-500/5">
+                                    <p className="text-sm font-semibold text-blue-400 mb-1">💡 Explanation</p>
+                                    <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{currentMCQ.explanation}</p>
+                                </div>
+                            )}
+
                             {/* Navigation */}
                             <div className="flex justify-between items-center mt-8 pt-6 border-t border-dark-700">
                                 <button
