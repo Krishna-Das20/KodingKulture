@@ -20,7 +20,10 @@ const FormSection = () => {
 
     const [forms, setForms] = useState([]);
     const [currentFormIndex, setCurrentFormIndex] = useState(0);
-    const [responses, setResponses] = useState({});
+    const [responses, setResponses] = useState(() => {
+        const saved = localStorage.getItem(`form_responses_${contestId}`);
+        return saved ? JSON.parse(saved) : {};
+    });
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [submittedForms, setSubmittedForms] = useState([]);
@@ -31,6 +34,11 @@ const FormSection = () => {
         fetchForms();
         fetchMySubmissions();
     }, [contestId]);
+
+    // Save responses to localStorage whenever they change
+    useEffect(() => {
+        localStorage.setItem(`form_responses_${contestId}`, JSON.stringify(responses));
+    }, [responses, contestId]);
 
     const fetchForms = async () => {
         try {
@@ -125,6 +133,13 @@ const FormSection = () => {
 
             toast.success('Form submitted successfully!');
             setSubmittedForms(prev => [...prev, form._id]);
+
+            // Clear this form's data from localStorage
+            setResponses(prev => {
+                const newResponses = { ...prev };
+                delete newResponses[form._id];
+                return newResponses;
+            });
 
             // Move to next form if available, otherwise redirect to hub for final submission
             if (currentFormIndex < forms.length - 1) {

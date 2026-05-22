@@ -34,6 +34,7 @@ import ContestViolations from './pages/admin/ContestViolations';
 import ContestParticipants from './pages/admin/ContestParticipants';
 import UserManagement from './pages/admin/UserManagement';
 import VerifyContests from './pages/admin/VerifyContests';
+import ManageForms from './pages/admin/ManageForms';
 import FormBuilder from './pages/admin/FormBuilder';
 import FormEvaluation from './pages/admin/FormEvaluation';
 import AdminRooms from './pages/admin/AdminRooms';
@@ -381,9 +382,18 @@ function App() {
             }
           />
 
-          {/* Form Builder Routes */}
+          {/* Form Management Routes */}
           <Route
             path="/admin/contest/forms/:contestId"
+            element={
+              <AdminOrOrganiserRoute>
+                <Layout><ManageForms /></Layout>
+              </AdminOrOrganiserRoute>
+            }
+          />
+
+          <Route
+            path="/admin/contest/forms/:contestId/new"
             element={
               <AdminOrOrganiserRoute>
                 <Layout><FormBuilder /></Layout>
