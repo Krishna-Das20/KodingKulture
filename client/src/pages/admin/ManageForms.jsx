@@ -9,8 +9,6 @@ import {
     ArrowLeft,
     ClipboardList,
     FileText,
-    MoreVertical,
-    Calendar,
     CheckSquare
 } from 'lucide-react';
 
